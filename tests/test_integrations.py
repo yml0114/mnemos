@@ -1,6 +1,7 @@
-"""集成模块测试 — Stager, Curator, 框架连接器"""
+"""集成模块测试 — Stager, Curator, 框架连接器, 时序推理, 嵌入"""
 
 import pytest
+import numpy as np
 from mnemos.core.models import MemoryEntry, MemoryQuery, ScopeType
 from mnemos.storage.palimpsest import PalimpsestStore
 from mnemos.retrieval.resonance import ResonanceEngine
@@ -190,3 +191,219 @@ class TestCrewAIIntegration:
             assert len(ctx) > 0
         finally:
             mem.close()
+
+
+# ── 时序推理测试 ────────────────────────────────────────
+
+
+class TestChronos:
+    def test_detect_current_state_intent(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import TemporalQueryMode
+        assert c.detect_intent("他现在住在哪里") == TemporalQueryMode.CURRENT_STATE
+        assert c.detect_intent("目前做什么工作") == TemporalQueryMode.CURRENT_STATE
+
+    def test_detect_historical_intent(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import TemporalQueryMode
+        assert c.detect_intent("去年发生了什么") == TemporalQueryMode.HISTORICAL_RANGE
+
+    def test_detect_upcoming_intent(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import TemporalQueryMode
+        assert c.detect_intent("下周有什么计划") == TemporalQueryMode.UPCOMING
+
+    def test_infer_memory_type_state(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import MemoryType
+        assert c.classify(MemoryEntry(content="他住在北京")) == MemoryType.STATE
+
+    def test_infer_memory_type_plan(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import MemoryType
+        assert c.classify(MemoryEntry(content="计划下周去上海")) == MemoryType.PLAN
+
+    def test_infer_memory_type_preference(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import MemoryType
+        assert c.classify(MemoryEntry(content="用户喜欢黑暗模式")) == MemoryType.PREFERENCE
+
+    def test_infer_memory_type_absence(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import MemoryType
+        assert c.classify(MemoryEntry(content="没有驾照")) == MemoryType.ABSENCE
+
+    def test_infer_memory_type_event_default(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import MemoryType
+        assert c.classify(MemoryEntry(content="今天天气很好")) == MemoryType.EVENT
+
+    def test_annotate_sets_memory_type(self):
+        from mnemos.temporal import Chronos
+        c = Chronos()
+        from mnemos.core.models import MemoryType
+        entry = MemoryEntry(content="他目前在字节跳动工作")
+        c.annotate(entry)
+        assert entry.memory_type == MemoryType.STATE
+        assert entry.state_key != ""
+
+    def test_state_deactivation(self, store):
+        from mnemos.temporal import Chronos
+        from mnemos.core.models import MemoryType
+        c = Chronos()
+
+        # 写入旧状态
+        old = MemoryEntry(content="住在上海", scope_id="u1", memory_type=MemoryType.STATE)
+        c.annotate(old)
+        store.inscribe(old)
+
+        # 写入新状态（同 state_key）
+        new = MemoryEntry(content="住在北京", scope_id="u1", memory_type=MemoryType.STATE)
+        c.annotate(new)
+        store.inscribe(new)
+
+        # 旧状态应被关闭
+        old_reloaded = store.by_id(old.entry_id)
+        assert old_reloaded is not None
+        assert not old_reloaded.is_active
+
+    def test_rerank_current_state_boosts_active(self):
+        from mnemos.temporal import Chronos
+        from mnemos.core.models import MemoryType, TemporalQueryMode, SearchResult
+
+        c = Chronos()
+        active = MemoryEntry(
+            content="住在北京", memory_type=MemoryType.STATE, is_active=True
+        )
+        inactive = MemoryEntry(
+            content="住在上海", memory_type=MemoryType.STATE, is_active=False
+        )
+        results = [
+            SearchResult(entry=active, resonance_score=0.5, signal_breakdown={}),
+            SearchResult(entry=inactive, resonance_score=0.5, signal_breakdown={}),
+        ]
+        reranked = c.rerank(results, "现在住哪里", TemporalQueryMode.CURRENT_STATE)
+        # 活跃状态应排到前面
+        assert reranked[0].entry.is_active
+
+    def test_rerank_upcoming_boosts_plans(self):
+        from mnemos.temporal import Chronos
+        from mnemos.core.models import MemoryType, TemporalQueryMode, SearchResult
+        from datetime import datetime, timedelta, timezone
+
+        c = Chronos()
+        future = datetime.now(timezone.utc) + timedelta(days=3)
+        plan = MemoryEntry(
+            content="下周出差", memory_type=MemoryType.PLAN,
+            event_start=future, is_active=True,
+        )
+        event = MemoryEntry(
+            content="上周开会", memory_type=MemoryType.EVENT,
+        )
+        results = [
+            SearchResult(entry=plan, resonance_score=0.5, signal_breakdown={}),
+            SearchResult(entry=event, resonance_score=0.5, signal_breakdown={}),
+        ]
+        reranked = c.rerank(results, "这周有什么安排", TemporalQueryMode.UPCOMING)
+        assert reranked[0].entry.memory_type == MemoryType.PLAN
+
+
+# ── 实体链接测试 ────────────────────────────────────────
+
+
+class TestNexus:
+    def test_extract_person(self):
+        from mnemos.temporal.nexus import Nexus
+        from mnemos.core.models import MemoryEntry
+        n = Nexus()
+        entities = n.extract(MemoryEntry(content="张三和李四一起去北京出差"))
+        labels = {e.label for e in entities}
+        # 启发式 NER，至少提取到一个含"张"或"李"的实体
+        assert any("张" in l or "李" in l for l in labels), f"labels: {labels}"
+
+    def test_extract_place(self):
+        from mnemos.temporal.nexus import Nexus
+        from mnemos.core.models import MemoryEntry
+        n = Nexus()
+        entities = n.extract(MemoryEntry(content="北京市朝阳区望京SOHO"))
+        labels = {e.label for e in entities}
+        # 至少提取到一个含"市"或"区"的实体
+        assert any("市" in l or "区" in l for l in labels), f"labels: {labels}"
+
+    def test_extract_org(self):
+        from mnemos.temporal.nexus import Nexus
+        from mnemos.core.models import MemoryEntry
+        n = Nexus()
+        entities = n.extract(MemoryEntry(content="字节跳动公司发布了新产品"))
+        labels = {e.label for e in entities}
+        assert "字节跳动公司" in labels
+
+    def test_extract_tech_term(self):
+        from mnemos.temporal.nexus import Nexus
+        from mnemos.core.models import MemoryEntry
+        n = Nexus()
+        entities = n.extract(MemoryEntry(content="使用 Python 和 FastAPI 开发"))
+        labels = {e.label for e in entities}
+        assert "Python" in labels
+        assert "FastAPI" in labels
+
+    def test_extract_query_entities(self):
+        from mnemos.temporal.nexus import Nexus
+        n = Nexus()
+        entities = n.extract_query_entities("张三的公司在哪里")
+        assert any("张三" in e for e in entities)
+
+
+# ── 嵌入引擎测试 ────────────────────────────────────────
+
+
+class TestHermes:
+    def test_hash_embedding_always_works(self):
+        from mnemos.embedding import Hermes
+        h = Hermes()
+        vec = h.embed("测试文本")
+        assert vec.shape == (384,)
+        assert 0.9 < float(np.linalg.norm(vec)) < 1.1
+
+    def test_same_text_same_vector(self):
+        from mnemos.embedding import Hermes
+        h = Hermes()
+        v1 = h.embed("用户喜欢黑暗模式")
+        v2 = h.embed("用户喜欢黑暗模式")
+        assert np.allclose(v1, v2)
+
+    def test_different_text_different_vector(self):
+        from mnemos.embedding import Hermes
+        h = Hermes()
+        v1 = h.embed("用户喜欢黑暗模式")
+        v2 = h.embed("今天天气很好适合出去玩")
+        sim = h.cosine_similarity(v1, v2)
+        assert sim < 0.5  # 不同主题应低相似度
+
+    def test_batch_similarity(self):
+        from mnemos.embedding import Hermes
+        h = Hermes()
+        query = h.embed("Python编程")
+        candidates = np.array([
+            h.embed("Python 是一种编程语言"),
+            h.embed("今天天气很好"),
+            h.embed("Python 和 FastAPI 开发"),
+        ])
+        scores = h.batch_similarity(query, candidates)
+        # "Python编程" 应该与含 Python 的文本更相似
+        assert scores[0] > scores[1]
+        assert scores[2] > scores[1]
+
+    def test_hermes_singleton(self):
+        from mnemos.embedding import get_hermes, Hermes
+        h1 = get_hermes()
+        h2 = get_hermes()
+        assert h1 is h2

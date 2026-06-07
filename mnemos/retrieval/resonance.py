@@ -20,6 +20,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import numpy as np
+
 from mnemos.core.models import (
     MemoryEntry,
     MemoryQuery,
@@ -118,12 +120,30 @@ class ResonanceEngine:
         # 2. 并行召回各信号
         candidates: dict[str, dict[str, float]] = {}  # entry_id → {signal: score}
 
-        # 语义信号（通过 FTS5 近似，实际部署时替换为向量检索）
+        # 语义信号：优先使用本地嵌入（Hermes），降级为 FTS5
         if query.query_text:
-            semantic_hits = self._store.fts(query.query_text, limit=50)
-            for i, entry in enumerate(semantic_hits):
-                score = 1.0 - (i / max(len(semantic_hits), 1)) * 0.5
-                self._add_signal(candidates, entry.entry_id, "semantic", score)
+            from mnemos.embedding import get_hermes
+            hermes = get_hermes()
+
+            if hermes.ready:
+                # 真实语义向量检索
+                query_vec = hermes.embed(query.query_text)
+                all_entries = self._store.all(limit=200)  # 召回池
+                if all_entries:
+                    entry_vecs = np.array([
+                        hermes.embed(e.content) for e in all_entries
+                    ])
+                    scores = hermes.batch_similarity(query_vec, entry_vecs)
+                    for i, entry in enumerate(all_entries):
+                        score = float(scores[i])
+                        if score > 0.3:  # 最低阈值
+                            self._add_signal(candidates, entry.entry_id, "semantic", score)
+            else:
+                # 降级：FTS5 近似
+                semantic_hits = self._store.fts(query.query_text, limit=50)
+                for i, entry in enumerate(semantic_hits):
+                    score = 1.0 - (i / max(len(semantic_hits), 1)) * 0.5
+                    self._add_signal(candidates, entry.entry_id, "semantic", score)
 
         # 关键词信号
         if keywords:

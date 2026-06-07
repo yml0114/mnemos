@@ -43,6 +43,27 @@ class ScopeType(StrEnum):
     SESSION = "session"      # 会话级：单次对话
 
 
+class MemoryType(StrEnum):
+    """记忆类型 — 对标 Mem0 的 7 种时序分类"""
+    EVENT = "event"              # 一次性事件: "去了日本"
+    STATE = "state"              # 持续状态: "住在上海" (可被新状态覆盖)
+    PLAN = "plan"                # 未来计划: "下周开会"
+    PREFERENCE = "preference"    # 偏好: "喜欢黑暗模式"
+    RELATIONSHIP = "relationship"  # 关系: "是张三的同事"
+    ABSENCE = "absence"          # 缺失/否定: "没有驾照"
+    TIMELESS = "timeless"        # 永恒事实: "Python 是编程语言"
+
+
+class TemporalQueryMode(StrEnum):
+    """查询的时序意图"""
+    CURRENT_STATE = "current_state"        # "现在住在哪"
+    HISTORICAL_RANGE = "historical_range"  # "去年发生了什么"
+    UPCOMING = "upcoming"                  # "这周有什么计划"
+    DURATION = "duration"                  # "这份工作做了多久"
+    SPECIFIC_DATE = "specific_date"        # "3月15日做了什么"
+    ANY = "any"                            # 无时序偏好
+
+
 # ── 实体模型 ────────────────────────────────────────────────
 
 
@@ -120,6 +141,14 @@ class MemoryEntry(BaseModel):
     )
     access_count: int = 0
     decay_factor: float = 1.0                     # 衰减因子 0-1，0=遗忘
+
+    # 时序元数据（2026-06 新增，对标 Mem0 Temporal Reasoning）
+    memory_type: MemoryType = MemoryType.TIMELESS
+    state_key: str = ""                           # 状态标识符（同key的记忆自动互斥覆盖）
+    event_start: datetime | None = None           # 事件/状态开始时间
+    event_end: datetime | None = None             # 事件/状态结束时间（None=持续中）
+    is_active: bool = True                        # 是否仍生效
+    temporal_precision: str = "day"               # year/month/day/hour/minute
 
     # 向量（外部管理）
     embedding_model: str = ""                     # 使用的嵌入模型名

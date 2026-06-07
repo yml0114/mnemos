@@ -24,6 +24,8 @@ Mnemos — 独立记忆世界
     mnemos.condensation  — 记忆蒸馏 (AlchemistCondenser)
     mnemos.extraction    — 记忆提取 (ScribeExtractor)
     mnemos.integrations  — 框架集成 (LangChain, CrewAI)
+    mnemos.temporal      — 时序推理 (Chronos) + 实体链接 (Nexus)
+    mnemos.embedding     — 本地语义嵌入 (ONNX, 零外部API)
     mnemos.viz           — 可视化 (DashboardProvider, 3D 仪表盘)
     mnemos.mcp           — MCP 协议服务 (5 个工具)
 """

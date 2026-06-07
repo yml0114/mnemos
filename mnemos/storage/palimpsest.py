@@ -58,7 +58,13 @@ CREATE TABLE IF NOT EXISTS impressions (
     decay       REAL NOT NULL DEFAULT 1.0,
     hits        INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
-    touched_at  TEXT NOT NULL
+    touched_at  TEXT NOT NULL,
+    memory_type TEXT NOT NULL DEFAULT 'timeless',
+    state_key   TEXT NOT NULL DEFAULT '',
+    event_start TEXT,
+    event_end   TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    temporal_precision TEXT NOT NULL DEFAULT 'day'
 );
 """
 
@@ -75,7 +81,13 @@ CREATE TABLE IF NOT EXISTS patterns (
     source_json TEXT NOT NULL DEFAULT '[]',
     confidence  TEXT NOT NULL DEFAULT 'tentative',
     created_at  TEXT NOT NULL,
-    touched_at  TEXT NOT NULL
+    touched_at  TEXT NOT NULL,
+    memory_type TEXT NOT NULL DEFAULT 'timeless',
+    state_key   TEXT NOT NULL DEFAULT '',
+    event_start TEXT,
+    event_end   TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    temporal_precision TEXT NOT NULL DEFAULT 'day'
 );
 """
 
@@ -91,7 +103,13 @@ CREATE TABLE IF NOT EXISTS principles (
     source_json TEXT NOT NULL DEFAULT '[]',
     confidence  TEXT NOT NULL DEFAULT 'bedrock',
     created_at  TEXT NOT NULL,
-    touched_at  TEXT NOT NULL
+    touched_at  TEXT NOT NULL,
+    memory_type TEXT NOT NULL DEFAULT 'timeless',
+    state_key   TEXT NOT NULL DEFAULT '',
+    event_start TEXT,
+    event_end   TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    temporal_precision TEXT NOT NULL DEFAULT 'day'
 );
 """
 
@@ -226,7 +244,20 @@ class PalimpsestStore:
     # ── 写入 ──────────────────────────────────────────
 
     def inscribe(self, entry: MemoryEntry) -> str:
-        """将一条记忆写入对应层次"""
+        """将一条记忆写入对应层次（自动时序标注 + 旧状态失效）"""
+        # 时序标注
+        from mnemos.temporal import Chronos
+        chronos = Chronos()
+        chronos.annotate(entry)
+
+        # 状态互斥：关闭同 state_key 的旧状态
+        if entry.memory_type.value == "state" and entry.state_key:
+            old_states = self._find_active_states(entry.scope_id, entry.state_key)
+            if old_states:
+                deactivated = chronos.deactivate_states(old_states, entry)
+                for eid in deactivated:
+                    self._set_inactive(eid)
+
         now = _now()
         row = _serialize_impression(entry, now)
 
@@ -236,8 +267,11 @@ class PalimpsestStore:
                    (entry_id, title, content, scope_type, scope_id,
                     tags_json, parent_id, related_json,
                     anchors_json, entities_json, beliefs_json,
-                    embedding_model, decay, hits, created_at, touched_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    embedding_model, decay, hits, created_at, touched_at,
+                    memory_type, state_key, event_start, event_end,
+                    is_active, temporal_precision)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                           ?,?,?,?,?,?)""",
                 row,
             )
             self._index_entities(entry.entry_id, "impression", entry.entities)
@@ -491,6 +525,14 @@ class PalimpsestStore:
             ).fetchone()[0],
         }
 
+    def all(self, limit: int = 1000) -> list[MemoryEntry]:
+        """返回所有印象层记忆（用于嵌入召回池）"""
+        rows = self.db.execute(
+            "SELECT * FROM impressions ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [_deserialize(dict(r), MemoryTier.IMPRESSION) for r in rows]
+
     # ── 内部辅助 ──────────────────────────────────────
 
     def _index_entities(
@@ -534,6 +576,22 @@ class PalimpsestStore:
                 ),
             )
 
+    def _find_active_states(self, scope_id: str, state_key: str) -> list[MemoryEntry]:
+        """查找同 scope + state_key 的活跃状态记忆"""
+        rows = self.db.execute(
+            "SELECT * FROM impressions WHERE scope_id=? AND state_key=? AND is_active=1",
+            (scope_id, state_key),
+        ).fetchall()
+        return [_deserialize(dict(r), MemoryTier.IMPRESSION) for r in rows]
+
+    def _set_inactive(self, entry_id: str) -> None:
+        """将一条记忆标记为已失效"""
+        now = _now()
+        self.db.execute(
+            "UPDATE impressions SET is_active=0, event_end=?, touched_at=? WHERE entry_id=?",
+            (now, now, entry_id),
+        )
+
 
 # ── 序列化辅助 ───────────────────────────────────────────
 
@@ -565,6 +623,12 @@ def _serialize_impression(entry: MemoryEntry, now: str) -> tuple:
         entry.access_count,
         entry.created_at.isoformat(),
         now,
+        entry.memory_type.value,
+        entry.state_key,
+        entry.event_start.isoformat() if entry.event_start else None,
+        entry.event_end.isoformat() if entry.event_end else None,
+        1 if entry.is_active else 0,
+        entry.temporal_precision,
     )
 
 
@@ -597,8 +661,19 @@ def _serialize_principle(entry: MemoryEntry, now: str) -> tuple:
 
 def _deserialize(row: dict, tier: MemoryTier) -> MemoryEntry:
     """数据库行 → MemoryEntry"""
+    from mnemos.core.models import MemoryType
+
     created = datetime.fromisoformat(row["created_at"])
     touched = datetime.fromisoformat(row.get("touched_at", row["created_at"]))
+
+    # 时序字段
+    memory_type = MemoryType(row.get("memory_type", "timeless"))
+    event_start = None
+    event_end = None
+    if row.get("event_start"):
+        event_start = datetime.fromisoformat(row["event_start"])
+    if row.get("event_end"):
+        event_end = datetime.fromisoformat(row["event_end"])
 
     entry = MemoryEntry(
         entry_id=row["entry_id"],
@@ -616,6 +691,12 @@ def _deserialize(row: dict, tier: MemoryTier) -> MemoryEntry:
         last_accessed_at=touched,
         access_count=row.get("hits", row.get("access_count", 0)),
         decay_factor=row.get("decay", 1.0),
+        memory_type=memory_type,
+        state_key=row.get("state_key", ""),
+        event_start=event_start,
+        event_end=event_end,
+        is_active=bool(row.get("is_active", 1)),
+        temporal_precision=row.get("temporal_precision", "day"),
     )
 
     if tier == MemoryTier.IMPRESSION:
