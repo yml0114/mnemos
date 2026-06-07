@@ -23,22 +23,22 @@ _CN_NAME = re.compile(_CN_SURNAME + _NAME_CHAR + '{1,2}')
 
 # 英文人名: 首字母大写的连续词 + 常见名
 _EN_NAME = re.compile(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b')
-# 英文地名
+# 英文地名（中英混合文本中 \b 在中文旁失效，不约束前导）
 _EN_PLACE = re.compile(
-    r'\b((?:[A-Z][a-z]*\.?\s*){1,3}(?:City|Town|Village|County|State|Province|Region|District'
+    r'((?:[A-Z][a-z]*\.?\s*){1,3}(?:City|Town|Village|County|State|Province|Region|District'
     r'|Island|Mountain|River|Lake|Ocean|Sea|Bay|Gulf|Valley|Forest|Park|Beach|Coast'
     r'|Harbor|Port|Airport|Station|Square|Street|Avenue|Road|Lane|Drive|Boulevard'
     r'|Highway|Bridge|Tower|Building|Center|Hall|Palace|Castle|Temple|Church|Mosque'
-    r'|Museum|Theatre|Stadium|Arena|Market|Mall|Plaza|Heights|Gardens|Hills|Springs))\b'
+    r'|Museum|Theatre|Stadium|Arena|Market|Mall|Plaza|Heights|Gardens|Hills|Springs))'
 )
-# 英文组织
+# 英文组织（同理）
 _EN_ORG = re.compile(
-    r'\b((?:[A-Z][a-z]*\.?\s*)+(?:Inc\.?|Corp\.?|LLC|Ltd\.?|Limited|GmbH|S\.A\.|'
+    r'((?:[A-Z][a-z]*\.?\s*)+(?:Inc\.?|Corp\.?|LLC|Ltd\.?|Limited|GmbH|S\.A\.|'
     r'Co\.?|Company|Corporation|Group|Holdings|Ventures|Capital|Partners|Associates|'
     r'Technologies|Solutions|Systems|Software|Networks|AI|Labs?|Research|Institute|'
     r'University|College|School|Hospital|Bank|Foundation|Trust|Agency|Authority|Board|'
     r'Council|Commission|Bureau|Department|Ministry|Organization|Association|Society|'
-    r'Union|Federation|Alliance|Consortium|Platform))\b'
+    r'Union|Federation|Alliance|Consortium|Platform))'
 )
 
 # 地名: 中文地名 + 地理后缀（非贪婪，限制前文长度避免跨句匹配）
@@ -89,9 +89,26 @@ class Nexus:
         for m in _TECH_TERMS.finditer(content):
             found.append(EntityRef(label=m.group(), entity_type="artifact"))
 
-        # 英文人名
+        # 英文地名（先于英文人名，避免地名被人名正则误匹配）
+        for m in _EN_PLACE.finditer(content):
+            found.append(EntityRef(label=m.group(), entity_type="location"))
+
+        # 英文组织（先于英文人名，避免组织被人名正则误匹配）
+        for m in _EN_ORG.finditer(content):
+            found.append(EntityRef(label=m.group(), entity_type="organization"))
+
+        # 英文人名（排除已被地名/组织匹配的文本）
+        _claimed_spans = set()
+        for e in found:
+            for m in re.finditer(re.escape(e.label), content):
+                for i in range(m.start(), m.end()):
+                    _claimed_spans.add(i)
+
         for m in _EN_NAME.finditer(content):
             label = m.group()
+            # 跳过已被地名/组织占用的文本
+            if any(i in _claimed_spans for i in range(m.start(), m.end())):
+                continue
             # 过滤明显的非人名词
             if label not in {"The", "This", "That", "These", "Those", "What",
                              "When", "Where", "Which", "There", "Their", "They",
@@ -104,14 +121,6 @@ class Nexus:
                              "Come", "Went", "Done", "Good", "Great", "Right",
                              "Wrong", "Same", "Much", "Many", "Most", "Very"}:
                 found.append(EntityRef(label=label, entity_type="person"))
-
-        # 英文地名
-        for m in _EN_PLACE.finditer(content):
-            found.append(EntityRef(label=m.group(), entity_type="location"))
-
-        # 英文组织
-        for m in _EN_ORG.finditer(content):
-            found.append(EntityRef(label=m.group(), entity_type="organization"))
 
         # 去重
         seen = set()

@@ -121,4 +121,15 @@ class BM25Scorer:
         return results
 
     def _tokenize(self, text: str) -> list[str]:
-        return [m.group().lower() for m in self._tokenizer.finditer(text)]
+        """Tokenize: Chinese bigrams + English words for better matching."""
+        tokens = []
+        # English words
+        for m in re.finditer(r'[a-zA-Z]+', text):
+            tokens.append(m.group().lower())
+        # Chinese: unigrams + bigrams for coverage
+        cn_chars = re.findall(r'[\u4e00-\u9fff]', text)
+        tokens.extend(cn_chars)
+        # Chinese bigrams
+        for i in range(len(cn_chars) - 1):
+            tokens.append(cn_chars[i] + cn_chars[i + 1])
+        return tokens
