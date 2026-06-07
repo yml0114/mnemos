@@ -1,35 +1,37 @@
 # Mnemos — 独立记忆世界
 
-> *Memory Palimpsest（记忆重写本）— A portable multi-tier AI memory system with a 3D galaxy dashboard.*
+> *Memory Palimpsest — A portable multi-tier AI memory system with 6-signal fusion retrieval, temporal reasoning, belief revision, and a 3D galaxy dashboard.*
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-26%20passed-brightgreen)](tests/)
-[![Version](https://img.shields.io/badge/version-0.1.0-818cf8)](pyproject.toml)
-[![Docker](https://img.shields.io/badge/docker-ready-2496ED)](Dockerfile)
+[![Tests](https://img.shields.io/badge/tests-48%20passed-brightgreen)](tests/)
+[![Version](https://img.shields.io/badge/version-0.2.0-818cf8)](pyproject.toml)
 [![MCP](https://img.shields.io/badge/protocol-MCP-orange)](mnemos/mcp/)
 
 **English** | [中文](#中文)
 
 ---
 
-Mnemos is an open-source, standalone memory backend for AI agents. It doesn't bind to any framework — any agent can connect via the MCP protocol. Think of it as a "digital hippocampus" that helps your agents remember, evolve, and see their memories in 3D.
+Mnemos is an open-source, standalone memory backend for AI agents. It doesn't bind to any framework — any agent can connect via the MCP protocol. Think of it as a **digital hippocampus** with temporal reasoning and belief evolution.
 
 ---
 
 ## ✨ Why Mnemos?
 
-|  | Mnemos | mem0 | agentmemory | supermemory |
+|  | Mnemos | mem0 | supermemory | Hindsight |
 |---|---|---|---|---|
-| **Memory tiers** | 3-layer evolution | Flat | Archival + recall | Flat |
-| **Storage** | SQLite + FTS5 (zero-dep) | ChromaDB / Qdrant | Supabase | Cloudflare |
-| **Dedup** | Jaccard + Levenshtein | Hash + cosine | — | — |
-| **Context injection** | 3-layer progressive Stager | Top-K | Layered | Top-K |
+| **Memory tiers** | 3-layer evolution | Flat | Flat | Multi-strategy |
+| **Storage** | SQLite + FTS5 (zero-dep) | ChromaDB / Qdrant | Cloudflare | Proprietary |
+| **Retrieval** | 6-signal fusion | 3-signal | Knowledge graph | Multi-strategy |
+| **Temporal reasoning** | ✅ Chronos | ✅ (2026-05) | ❌ | ❌ |
+| **Entity linking** | ✅ CN + EN | ✅ | ✅ | ✅ |
+| **Belief revision** | ✅ 4-level confidence | ❌ | ❌ | ❌ |
+| **User profiling** | ✅ Mneme | ❌ | ✅ | ❌ |
+| **LLM Judge** | ✅ + Rule fallback | ✅ | ✅ | ✅ |
 | **3D visualization** | ✅ Galaxy + Belief Tree | ❌ | ❌ | ❌ |
-| **MCP protocol** | ✅ | ❌ | ✅ | ✅ |
-| **Framework integrations** | LangChain + CrewAI | 21 integrations | 50+ tools | Browser extension |
-| **LLM dependency** | None (works without LLM) | Requires embeddings | Requires OpenAI | — |
-| **License** | Apache 2.0 | Apache 2.0 | MIT | MIT |
+| **MCP protocol** | ✅ | ❌ | ✅ | ❌ |
+| **LLM dependency** | None (works offline) | Requires embeddings | — | Requires Gemini |
+| **License** | Apache 2.0 | Apache 2.0 | MIT | Proprietary |
 
 ---
 
@@ -44,30 +46,56 @@ Impressions (raw)  →  Patterns (distilled)  →  Principles (eternal)
     fleeting               structured               immutable truths
 ```
 
-- **Impressions**: Raw conversation fragments, ephemeral by nature
-- **Patterns**: Distilled recurring themes — habits, preferences, routines
-- **Principles**: Core beliefs that survive decay, the "soul" of the agent
+### Six-Signal Resonance Engine
 
-### Four-Level Scope Isolation
-
-```
-Universe  →  Tenant  →  Persona  →  Session
-(global)     (team)      (role)       (context)
-```
-
-One database, multiple worlds. Perfect for multi-tenant / multi-agent deployments.
-
-### Five-Signal Resonance Engine
-
-Memory recall isn't just keyword matching — it's **signal fusion**:
+Memory recall is **signal fusion** — not just keyword matching:
 
 | Signal | Weight | What it captures |
 |---|---|---|
-| **Semantic** | 35% | Meaning similarity (via embeddings or FTS) |
+| **Semantic** | 35% | Meaning similarity (Hermes ONNX or hash fallback) |
 | **Keyword** | 25% | Direct lexical match (FTS5) |
-| **Entity** | 20% | Named entity co-occurrence |
-| **Temporal** | 10% | Recency and decay curves |
-| **Access** | 10% | Usage frequency boosting |
+| **BM25** | 20% | Probabilistic keyword scoring (no ES needed) |
+| **Entity** | 10% | Named entity co-occurrence (CN + EN) |
+| **Temporal** | 5% | Recency, decay curves, state_key resolution |
+| **Access** | 5% | Usage frequency boosting |
+
+### Chronos Temporal Reasoning
+
+Unlike simple recency sorting, Chronos understands **temporal intent**:
+
+- **State queries**: "What is X?" → returns the *current* value (state_key deactivation)
+- **Historical queries**: "What was X?" → returns the *past* value
+- **Upcoming queries**: "What will happen?" → returns future plans
+- **Change detection**: "Did X change?" → returns transition timeline
+- **Duration queries**: "How long has X been?" → returns time span
+- **Frequency queries**: "How often does X?" → returns occurrence patterns
+
+### Belief Revision System
+
+Every memory carries **belief records** with 4-level confidence:
+
+```
+Speculative → Tentative → Confirmed → Bedrock
+   (10%)        (30%)       (50%)      (70%)
+```
+
+Beliefs can be **revised** — new evidence upgrades or downgrades confidence. Old beliefs are never deleted, creating an audit trail.
+
+### Hermes Embedding Engine
+
+Zero-API local embeddings with graceful degradation:
+
+```
+ONNX Runtime (384-dim, 24MB) → n-gram hash projection (384-dim, instant)
+     ↑ needs model download          ↑ always works, no deps
+```
+
+### Nexus Entity Linking
+
+Bilingual entity extraction — Chinese + English:
+
+- 🇨🇳 Chinese: Surname-based name extraction, place suffixes, org patterns
+- 🇺🇸 English: Capitalized name patterns, org suffixes (Inc/LLC/Ltd...), place suffixes
 
 ---
 
@@ -76,7 +104,17 @@ Memory recall isn't just keyword matching — it's **signal fusion**:
 ### Install
 
 ```bash
+# Core (no heavy deps)
 pip install mnemos
+
+# With local embeddings
+pip install mnemos[embedding]
+
+# With LLM Judge
+pip install mnemos[judge]
+
+# Everything
+pip install mnemos[all]
 ```
 
 ### Start the memory server
@@ -96,7 +134,7 @@ mnemos-dashboard --db memory.db --port 8765
 
 ```python
 from mnemos import PalimpsestStore, ResonanceEngine, Curator
-from mnemos.core.models import MemoryEntry, ScopeType
+from mnemos.core.models import MemoryEntry, MemoryQuery, ScopeType
 
 store = PalimpsestStore("memory.db")
 store.connect()
@@ -110,7 +148,7 @@ store.inscribe(MemoryEntry(
     tags=["preference", "ui"],
 ))
 
-# Search with resonance
+# Search with 6-signal resonance
 engine = ResonanceEngine(store)
 results = engine.search(MemoryQuery(query_text="design preferences"))
 
@@ -125,23 +163,52 @@ result = curator.smart_inscribe(MemoryEntry(
 print(result["action"])  # "skipped" — duplicate detected!
 ```
 
-### LangChain Integration
+### User Profiling
 
 ```python
-from mnemos.integrations.langchain import MnemosMemory
-from langchain.agents import create_react_agent
+from mnemos.profile import Mneme
 
-memory = MnemosMemory(scope_id="agent-001")
-agent = create_react_agent(llm, tools, memory=memory)
+mneme = Mneme(store)
+profile = mneme.build("user-001")
+print(profile.preferences)  # ["喜欢黑暗模式", "偏好极简UI"]
+print(profile.projects)     # ["AI平行世界", "不尬翻译APP"]
+print(mneme.summary(profile))  # Suitable for system prompt injection
 ```
 
-### CrewAI Integration
+### LLM Judge for Benchmarking
 
 ```python
-from mnemos.integrations.crewai import MnemosCrewMemory
+from mnemos.evaluation import LLMJudge, RuleJudge
 
+# With OpenAI API
+judge = LLMJudge(api_key="sk-...", model="gpt-4o")
+result = judge.judge(
+    question="Where does the user live?",
+    ground_truth="Shanghai",
+    system_answer="Resides in Shanghai",
+)
+print(result["score"])  # 1.0
+
+# Rule-based fallback (no API needed)
+rule_judge = RuleJudge()
+result = rule_judge.judge(
+    question="Where does the user live?",
+    ground_truth="Shanghai",
+    system_answer="Lives in Beijing",
+)
+print(result["score"])  # 0.0
+```
+
+### Framework Integrations
+
+```python
+# LangChain
+from mnemos.integrations.langchain import MnemosMemory
+memory = MnemosMemory(scope_id="agent-001")
+
+# CrewAI
+from mnemos.integrations.crewai import MnemosCrewMemory
 memory = MnemosCrewMemory(scope_id="my-crew")
-crew = Crew(agents=[...], tasks=[...], memory=memory)
 ```
 
 ### MCP Protocol
@@ -159,7 +226,7 @@ Connect any MCP-compatible client:
 }
 ```
 
-Five MCP tools exposed: `inscribe`, `recall`, `revise`, `obliterate`, `traverse`
+Six MCP tools: `inscribe`, `recall`, `revise`, `obliterate`, `traverse`, `profile`
 
 ---
 
@@ -182,28 +249,35 @@ Built with Three.js + UnrealBloom post-processing.
 
 ```
 mnemos/
-├── core/models.py          # MemoryEntry, BeliefRecord, SearchResult
-├── storage/palimpsest.py   # SQLite + FTS5 engine, scope isolation
+├── core/models.py              # MemoryEntry, BeliefRecord, SearchResult
+├── storage/palimpsest.py       # SQLite + FTS5 engine, scope isolation
 ├── retrieval/
-│   ├── resonance.py        # Five-signal fusion engine
-│   └── stager.py           # Progressive context injection (70-90% token savings)
+│   ├── resonance.py            # Six-signal fusion engine
+│   ├── bm25.py                 # BM25 probabilistic keyword scoring
+│   └── stager.py               # Progressive context injection (70-90% token savings)
 ├── curation/
-│   └── __init__.py         # Jaccard + Levenshtein dedup engine
+│   └── __init__.py             # Jaccard + Levenshtein dedup engine
 ├── condensation/
-│   └── alchemist.py        # Memory distillation (LLM-powered)
+│   └── alchemist.py            # Rule + LLM memory distillation
 ├── extraction/
-│   └── scribe.py           # Auto-extract memories from conversations
+│   └── scribe.py               # Auto-extract memories from conversations
+├── evaluation/
+│   └── __init__.py             # LLMJudge (GPT-4o) + RuleJudge (zero-dep)
+├── profile/
+│   └── __init__.py             # Mneme auto user profiling
+├── embedding/
+│   └── __init__.py             # Hermes: ONNX → hash graceful degradation
+├── temporal/
+│   ├── __init__.py             # Chronos temporal reasoning engine
+│   └── nexus.py                # Nexus bilingual entity linking
 ├── integrations/
-│   ├── langchain.py        # LangChain / LangGraph memory backend
-│   └── crewai.py           # CrewAI memory backend
+│   ├── langchain.py            # LangChain memory backend
+│   └── crewai.py               # CrewAI memory backend
 ├── viz/
-│   ├── data_provider.py    # Visualization data layer
-│   └── dashboard.py        # 3D dashboard server (Three.js)
-├── mcp/
-│   └── server.py           # MCP protocol server
-└── tests/
-    ├── test_palimpsest.py   # 12 core tests
-    └── test_integrations.py # 14 integration tests
+│   ├── data_provider.py        # Visualization data layer
+│   └── dashboard.py            # 3D dashboard server (Three.js)
+└── mcp/
+    └── server.py               # MCP protocol server (6 tools)
 ```
 
 ---
@@ -211,18 +285,23 @@ mnemos/
 ## 🔮 Roadmap
 
 - [x] Core storage engine (SQLite + FTS5)
-- [x] Five-signal resonance retrieval
+- [x] Five → Six-signal resonance retrieval (+BM25)
 - [x] Jaccard + Levenshtein dedup
 - [x] Progressive 3-layer context injection
+- [x] Chronos temporal reasoning
+- [x] Nexus bilingual entity linking (CN + EN)
+- [x] Hermes local embedding (ONNX → hash fallback)
+- [x] LLM Judge + Rule Judge for benchmarking
+- [x] Mneme auto user profiling
+- [x] LLM-powered distillation (Alchemist)
 - [x] 3D memory galaxy dashboard
 - [x] MCP protocol server
 - [x] LangChain / CrewAI integrations
-- [x] Docker deployment
-- [ ] ONNX local embeddings (no API dependency)
-- [ ] TypeScript SDK
 - [ ] LongMemEval benchmark submission
+- [ ] TypeScript SDK
 - [ ] PyPI release
-- [ ] MCP tools expansion (5 → 20+)
+- [ ] MCP tools expansion (6 → 20+)
+- [ ] Multi-modal memory (images, audio)
 
 ---
 
@@ -232,11 +311,7 @@ Apache 2.0 — see [LICENSE](LICENSE)
 
 ---
 
-## 🙏 Acknowledgments
-
-Mnemos is named after the Greek goddess of memory, mother of the Muses. The architecture is inspired by the concept of a **palimpsest** — an ancient manuscript where old text was scraped off to make room for new writing, yet traces of the original remain forever.
-
----
+*Mnemos is named after the Greek goddess of memory, mother of the Muses. The architecture is inspired by the concept of a **palimpsest** — an ancient manuscript where old text was scraped off to make room for new writing, yet traces of the original remain forever.*
 
 ---
 
@@ -244,108 +319,103 @@ Mnemos is named after the Greek goddess of memory, mother of the Muses. The arch
 
 ## Mnemos — 独立记忆世界
 
-> *记忆重写本 — 可移植的多层 AI 记忆系统，自带 3D 记忆星系可视化仪表盘*
+> *记忆重写本 — 可移植的多层 AI 记忆系统，6路信号融合检索 + 时序推理 + 信念修正 + 3D星系可视化*
 
 ---
 
 ## ✨ 为什么选 Mnemos？
 
-- **三层记忆进化**：印象 → 模式 → 原则，记忆不是静态存储，而是会蒸馏、会进化
-- **零外部依赖**：默认 SQLite + FTS5，不绑 ChromaDB / Supabase / 任何云服务
-- **五路信号检索引擎**：语义 + 关键词 + 实体 + 时间 + 访问频率，五路信号加权融合
-- **四级隔离**：Universe / Tenant / Persona / Session，一份数据库支撑多租户多角色
-- **智能去重**：Jaccard 相似度快速筛 → Levenshtein 编辑距离精确判 → skip / merge / insert 三策略
-- **渐进式上下文注入**：3 层分层注入（核心 → 上下文 → 归档），Token 消耗削减 70-90%
-- **3D 记忆星系**：Three.js + UnrealBloom 渲染，记忆粒子在螺旋星系中漂浮，点击查看信念演化
-- **MCP 协议原生**：任何 MCP 兼容 Agent 零代码接入
-- **LangChain / CrewAI 集成**：一行代码接入两大主流 Agent 框架
-- **Docker 一键部署**：双服务编排，仪表盘 + MCP 服务开箱即用
-- **Apache 2.0 开源**：完全自由使用
+| 维度 | Mnemos | mem0 | supermemory | Hindsight |
+|---|---|---|---|---|
+| **记忆层级** | 3层进化 | 单层 | 单层 | 多策略 |
+| **检索引擎** | 6路信号融合 | 3路 | 知识图谱 | 多策略 |
+| **时序推理** | ✅ Chronos | ✅ (2026-05) | ❌ | ❌ |
+| **实体链接** | ✅ 中英文 | ✅ | ✅ | ✅ |
+| **信念修正** | ✅ 4级置信度 | ❌ | ❌ | ❌ |
+| **用户画像** | ✅ Mneme | ❌ | ✅ | ❌ |
+| **LLM裁判** | ✅ + 规则降级 | ✅ | ✅ | ✅ |
+| **3D可视化** | ✅ 星系+信念树 | ❌ | ❌ | ❌ |
+| **LLM依赖** | 无（可离线运行） | 需嵌入模型 | — | 需Gemini |
+| **协议** | Apache 2.0 | Apache 2.0 | MIT | 闭源 |
 
----
-
-## 🚀 快速开始
-
-```bash
-# 安装
-pip install mnemos
-
-# 启动记忆服务
-mnemos-server --db memory.db --port 8760
-
-# 启动 3D 仪表盘
-mnemos-dashboard --db memory.db --port 8765
-# 浏览器打开 http://localhost:8765
-```
-
-详细用法见上方 English 部分。
+**差异化壁垒**：
+1. 唯一拥有 **3D 记忆星系可视化** 的记忆系统
+2. 唯一默认 **零外部依赖即可完整运行** 的方案
+3. **信念修正系统** — 其他项目均无
+4. **Chronos 时序推理** — 与 mem0 2026-05 版本同构，但零 LLM 依赖
 
 ---
 
 ## 🧠 核心架构
 
 ```
-┌─────────────────────────────────────────────┐
-│                 Agent / App                  │
-├──────────────┬──────────────┬────────────────┤
-│  LangChain   │   CrewAI     │   MCP Client   │
-│  MnemosMemory│MnemosCrewMem │   (any)        │
-├──────────────┴──────────────┴────────────────┤
-│              Mnemos Core                      │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────┐ │
-│  │ Scribe   │ │ Curator  │ │  Alchemist   │ │
-│  │ (提取)   │ │ (去重)   │ │  (蒸馏)      │ │
-│  └──────────┘ └──────────┘ └──────────────┘ │
-│  ┌──────────────────────────────────────┐    │
-│  │        Palimpsest Store               │    │
-│  │  Impressions │ Patterns │ Principles  │    │
-│  │     (FTS5)    │  (FTS5)  │   (FTS5)   │    │
-│  └──────────────────────────────────────┘    │
-│  ┌──────────────────────────────────────┐    │
-│  │     Resonance Engine (5 signals)     │    │
-│  │  Semantic │ Keyword │ Entity │ Time  │    │
-│  └──────────────────────────────────────┘    │
-│  ┌──────────────┐ ┌────────────────────┐     │
-│  │   Stager     │ │ 3D Dashboard       │     │
-│  │  (分层注入)  │ │ (记忆星系)         │     │
-│  └──────────────┘ └────────────────────┘     │
-└──────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│                   Agent / App                    │
+├──────────────┬──────────────┬────────────────────┤
+│  LangChain   │   CrewAI     │   MCP Client        │
+├──────────────┴──────────────┴────────────────────┤
+│                  Mnemos Core                      │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │
+│  │ Scribe   │ │ Curator  │ │  Alchemist       │  │
+│  │ (提取)   │ │ (去重)   │ │  (规则+LLM蒸馏)  │  │
+│  └──────────┘ └──────────┘ └──────────────────┘  │
+│  ┌────────────────────────────────────────────┐   │
+│  │           Palimpsest Store                  │   │
+│  │  Impressions │ Patterns │ Principles        │   │
+│  └────────────────────────────────────────────┘   │
+│  ┌────────────────────────────────────────────┐   │
+│  │     Resonance Engine (6 signals)           │   │
+│  │  Semantic │ Keyword │ BM25 │ Entity │ Time │   │
+│  └────────────────────────────────────────────┘   │
+│  ┌──────────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │   Chronos    │ │  Nexus   │ │   Hermes     │  │
+│  │  (时序推理)  │ │(实体链接)│ │  (本地嵌入)  │  │
+│  └──────────────┘ └──────────┘ └──────────────┘  │
+│  ┌──────────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │   Mneme      │ │  Judge   │ │  3D Galaxy   │  │
+│  │  (用户画像)  │ │(评测裁判)│ │  (可视化)    │  │
+│  └──────────────┘ └──────────┘ └──────────────┘  │
+└──────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📊 与赛道头部项目对比
+## 🚀 快速开始
 
-| 维度 | Mnemos | mem0 | agentmemory | supermemory |
-|---|---|---|---|---|
-| 记忆层级 | 3层进化 | 单层 | 归档+召回 | 单层 |
-| 存储引擎 | SQLite+FTS5 | ChromaDB/Qdrant | Supabase | Cloudflare |
-| 去重算法 | Jaccard+编辑距离 | Hash+cosine | — | — |
-| 上下文注入 | 3层渐进Stager | Top-K | 分层 | Top-K |
-| 3D可视化 | ✅ 星系+信念树 | ❌ | ❌ | ❌ |
-| MCP协议 | ✅ | ❌ | ✅ | ✅ |
-| 框架集成 | LangChain+CrewAI | 21个 | 50+工具 | 浏览器插件 |
-| LLM依赖 | 无（可选嵌入） | 需嵌入模型 | 需OpenAI | — |
+```bash
+# 核心安装（无重依赖）
+pip install mnemos
 
-**差异化壁垒：** Mnemos 是唯一拥有 3D 记忆星系可视化的记忆系统，也是唯一默认零外部依赖即可完整运行的方案。
+# 含本地嵌入
+pip install mnemos[embedding]
+
+# 含 LLM Judge
+pip install mnemos[judge]
+
+# 全量安装
+pip install mnemos[all]
+```
 
 ---
 
 ## 🔮 路线图
 
 - [x] 核心存储引擎（SQLite + FTS5）
-- [x] 五路信号共振检索
-- [x] Jaccard + Levenshtein 去重
-- [x] 渐进式 3 层上下文注入
+- [x] 5→6路信号共振检索（+BM25）
+- [x] Chronos 时序推理
+- [x] Nexus 中英文实体链接
+- [x] Hermes 本地嵌入（ONNX→hash降级）
+- [x] LLM Judge + Rule Judge 评测裁判
+- [x] Mneme 用户画像
+- [x] Alchemist LLM 智能蒸馏
 - [x] 3D 记忆星系仪表盘
 - [x] MCP 协议服务
 - [x] LangChain / CrewAI 集成
-- [x] Docker 部署
-- [ ] ONNX 本地嵌入（彻底摆脱 API 依赖）
+- [ ] LongMemEval 基准提交
 - [ ] TypeScript SDK
-- [ ] LongMemEval 基准测试提交
-- [ ] PyPI 正式发布
-- [ ] MCP 工具扩展（5 → 20+）
+- [ ] PyPI 发布
+- [ ] MCP 工具扩展（6→20+）
+- [ ] 多模态记忆（图片、音频）
 
 ---
 
