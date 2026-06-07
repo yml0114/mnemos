@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_MODEL = "BAAI/bge-m3"
 EMBEDDING_DIM = 384
 CACHE_DIR = Path.home() / ".cache" / "mnemos" / "embeddings"
 
