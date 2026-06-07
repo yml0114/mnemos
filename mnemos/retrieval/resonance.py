@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from mnemos.core.models import (
@@ -70,8 +70,6 @@ def _parse_time_hint(text: str) -> tuple[datetime | None, datetime | None]:
     for hint, offset in _TIME_HINTS.items():
         if hint in text:
             if isinstance(offset, int):
-                # N天前/后
-                from datetime import timedelta
                 target = now.replace(
                     hour=0, minute=0, second=0, microsecond=0
                 ) + timedelta(days=offset)
@@ -81,7 +79,6 @@ def _parse_time_hint(text: str) -> tuple[datetime | None, datetime | None]:
                 after = now - timedelta(days=now.weekday())
                 after = after.replace(hour=0, minute=0, second=0, microsecond=0)
             elif offset == "last_week":
-                from datetime import timedelta
                 after = now - timedelta(days=now.weekday() + 7)
                 after = after.replace(hour=0, minute=0, second=0, microsecond=0)
                 before = after + timedelta(days=7)

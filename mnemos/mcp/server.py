@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from mnemos.core.models import (
+    ContextScope,
+    EntityRef,
     MemoryEntry,
     MemoryQuery,
     MemoryTier,
@@ -227,7 +229,7 @@ async def _handle_remember(args: dict) -> dict:
     now = datetime.now(timezone.utc)
 
     entities = [
-        __import__("mnemos.core.models", fromlist=["EntityRef"]).EntityRef(
+        EntityRef(
             label=e.get("label", ""),
             entity_type=e.get("entity_type", "concept"),
             description=e.get("description", ""),
@@ -259,7 +261,7 @@ async def _handle_recall(args: dict) -> dict:
     scopes = []
     if args.get("scope_type") and args.get("scope_id"):
         scopes = [
-            __import__("mnemos.core.models", fromlist=["ContextScope"]).ContextScope(
+            ContextScope(
                 scope_type=ScopeType(args["scope_type"]),
                 scope_id=args["scope_id"],
             )
@@ -322,9 +324,8 @@ async def _handle_revise(args: dict) -> dict:
         entry.entry_id,
         entry.tier,
         {"beliefs_json": json.dumps(
-            [b.model_dump() for b in entry.beliefs],
+            [b.model_dump(mode="json") for b in entry.beliefs],
             ensure_ascii=False,
-            default=str,
         )},
     )
 

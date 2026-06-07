@@ -574,7 +574,7 @@ def _serialize_principle(entry: MemoryEntry, now: str) -> tuple:
         entry.entry_id, entry.title, entry.content,
         entry.scope.value, entry.scope_id,
         _json(entry.tags),
-        _json([e.model_dump() for e in entry.entities]),
+        _json([e.model_dump(mode="json") for e in entry.entities]),
         _json(entry.related_ids),
         entry.beliefs[0].confidence.value if entry.beliefs else "bedrock",
         entry.created_at.isoformat(),
