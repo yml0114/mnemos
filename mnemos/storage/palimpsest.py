@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS patterns (
     beliefs_json TEXT NOT NULL DEFAULT '[]',
     source_json TEXT NOT NULL DEFAULT '[]',
     confidence  TEXT NOT NULL DEFAULT 'tentative',
+    decay       REAL NOT NULL DEFAULT 1.0,
+    hits        INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     touched_at  TEXT NOT NULL,
     memory_type TEXT NOT NULL DEFAULT 'timeless',
@@ -102,6 +104,8 @@ CREATE TABLE IF NOT EXISTS principles (
     entities_json TEXT NOT NULL DEFAULT '[]',
     source_json TEXT NOT NULL DEFAULT '[]',
     confidence  TEXT NOT NULL DEFAULT 'bedrock',
+    decay       REAL NOT NULL DEFAULT 1.0,
+    hits        INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     touched_at  TEXT NOT NULL,
     memory_type TEXT NOT NULL DEFAULT 'timeless',
@@ -180,7 +184,9 @@ CREATE INDEX IF NOT EXISTS idx_imp_scope   ON impressions(scope_type, scope_id);
 CREATE INDEX IF NOT EXISTS idx_imp_time    ON impressions(created_at);
 CREATE INDEX IF NOT EXISTS idx_imp_decay   ON impressions(decay);
 CREATE INDEX IF NOT EXISTS idx_pat_scope   ON patterns(scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_pat_decay   ON patterns(decay);
 CREATE INDEX IF NOT EXISTS idx_pri_scope   ON principles(scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_pri_decay   ON principles(decay);
 CREATE INDEX IF NOT EXISTS idx_ent_mem     ON entity_index(memory_id);
 CREATE INDEX IF NOT EXISTS idx_ent_label   ON entity_index(label);
 CREATE INDEX IF NOT EXISTS idx_bel_mem     ON belief_log(memory_id);
@@ -223,6 +229,19 @@ class PalimpsestStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(ALL_SCHEMA)
+
+        # 兼容性迁移：旧表无 decay/hits 列时添加（无论表是新创建还是已存在都尝试）
+        for tbl in ("patterns", "principles"):
+            cols = [
+                r[1] for r in self._conn.execute(
+                    f"PRAGMA table_info({tbl})"
+                ).fetchall()
+            ]
+            if "decay" not in cols:
+                self._conn.execute(f"ALTER TABLE {tbl} ADD COLUMN decay REAL NOT NULL DEFAULT 1.0")
+            if "hits" not in cols:
+                self._conn.execute(f"ALTER TABLE {tbl} ADD COLUMN hits INTEGER NOT NULL DEFAULT 0")
+
         return self._conn
 
     def close(self) -> None:
@@ -283,8 +302,9 @@ class PalimpsestStore:
                 """INSERT INTO patterns
                    (entry_id, title, content, scope_type, scope_id,
                     tags_json, entities_json, beliefs_json,
-                    source_json, confidence, created_at, touched_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    source_json, confidence, decay, hits,
+                    created_at, touched_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 _serialize_pattern(entry, now),
             )
             self._index_entities(entry.entry_id, "pattern", entry.entities)
@@ -294,8 +314,8 @@ class PalimpsestStore:
                 """INSERT INTO principles
                    (entry_id, title, content, scope_type, scope_id,
                     tags_json, entities_json, source_json,
-                    confidence, created_at, touched_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    confidence, decay, hits, created_at, touched_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 _serialize_principle(entry, now),
             )
             self._index_entities(entry.entry_id, "principle", entry.entities)
@@ -310,7 +330,7 @@ class PalimpsestStore:
         """修改已有记忆的内容或信念"""
         table = _table(tier)
         allowed = {"title", "content", "decay", "tags_json",
-                   "entities_json", "beliefs_json", "confidence"}
+                   "entities_json", "beliefs_json", "confidence", "hits"}
         safe = {k: v for k, v in updates.items() if k in allowed}
         if not safe:
             return False
@@ -376,7 +396,7 @@ class PalimpsestStore:
         self, scope_type: ScopeType, scope_id: str,
         tiers: list[MemoryTier] | None = None, limit: int = 50
     ) -> list[MemoryEntry]:
-        """按归属范围召回"""
+        """按归属范围召回，按 decay × resonance 混合排序（活跃优先）"""
         if tiers is None:
             tiers = list(MemoryTier)
         results: list[MemoryEntry] = []
@@ -384,11 +404,12 @@ class PalimpsestStore:
             rows = self.db.execute(
                 f"SELECT * FROM {_table(tier)} "
                 "WHERE scope_type=? AND scope_id=? "
-                "ORDER BY created_at DESC LIMIT ?",
+                "ORDER BY decay DESC, touched_at DESC LIMIT ?",
                 (scope_type.value, scope_id, limit),
             ).fetchall()
             results.extend(_deserialize(dict(r), tier) for r in rows)
-        results.sort(key=lambda e: e.created_at, reverse=True)
+        # decay 排序：未衰减的记忆（高频使用）优先
+        results.sort(key=lambda e: (e.decay_factor, e.last_accessed_at), reverse=True)
         return results[:limit]
 
     def by_entity(self, label: str, limit: int = 20) -> list[MemoryEntry]:
@@ -425,6 +446,25 @@ class PalimpsestStore:
             params,
         ).fetchall()
         return [_deserialize(dict(r), MemoryTier.IMPRESSION) for r in rows]
+
+    def by_decay(
+        self, min_decay: float = 0.0, max_decay: float = 0.3,
+        limit: int = 50
+    ) -> list[MemoryEntry]:
+        """按衰减程度召回（定位即将被遗忘的记忆）"""
+        results: list[MemoryEntry] = []
+        for table, tier in [
+            ("impressions", MemoryTier.IMPRESSION),
+            ("patterns", MemoryTier.PATTERN),
+            ("principles", MemoryTier.PRINCIPLE),
+        ]:
+            rows = self.db.execute(
+                f"SELECT * FROM {table} WHERE decay >= ? AND decay <= ? "
+                "ORDER BY decay ASC, touched_at DESC LIMIT ?",
+                (min_decay, max_decay, limit),
+            ).fetchall()
+            results.extend(_deserialize(dict(r), tier) for r in rows)
+        return results[:limit]
 
     def traverse(
         self, entry_id: str, depth: int = 2
@@ -484,23 +524,43 @@ class PalimpsestStore:
 
     # ── 维护 ──────────────────────────────────────────
 
-    def decay_stale(self, rate: float = 0.01) -> int:
-        """对长期未访问的记忆施加衰减"""
-        c = self.db.execute(
-            "UPDATE impressions SET decay = MAX(0, decay - ?) WHERE touched_at < ?",
-            (rate, _now()),
+    def touch(self, entry_id: str, tier: MemoryTier) -> None:
+        """标记为被访问，刷新衰减 + 增加访问计数"""
+        now = _now()
+        table = _table(tier)
+        self.db.execute(
+            f"UPDATE {table} SET hits = hits + 1, "
+            f"decay = MIN(1.0, decay + 0.05), "
+            f"touched_at = ? WHERE entry_id = ?",
+            (now, entry_id),
         )
         self.db.commit()
-        return c.rowcount
+
+    def decay_stale(self, rate: float = 0.01) -> int:
+        """对长期未访问的记忆施加衰减（全三层）"""
+        now = _now()
+        total = 0
+        for table in ("impressions", "patterns", "principles"):
+            c = self.db.execute(
+                f"UPDATE {table} SET decay = MAX(0.0, decay - ?) WHERE touched_at < ?",
+                (rate, now),
+            )
+            total += c.rowcount
+        self.db.commit()
+        return total
 
     def purge_dead(self, before: datetime) -> int:
-        """清除衰减归零的旧记忆"""
-        c = self.db.execute(
-            "DELETE FROM impressions WHERE decay <= 0 AND created_at < ?",
-            (before.isoformat(),),
-        )
+        """清除衰减归零的旧记忆（全三层）"""
+        cutoff = before.isoformat()
+        total = 0
+        for table in ("impressions", "patterns", "principles"):
+            c = self.db.execute(
+                f"DELETE FROM {table} WHERE decay <= 0 AND created_at < ?",
+                (cutoff,),
+            )
+            total += c.rowcount
         self.db.commit()
-        return c.rowcount
+        return total
 
     def count(self) -> dict[str, int]:
         """返回各层计数"""
@@ -641,6 +701,8 @@ def _serialize_pattern(entry: MemoryEntry, now: str) -> tuple:
         _json([b.model_dump(mode="json") for b in entry.beliefs]),
         _json(entry.related_ids),
         entry.beliefs[0].confidence.value if entry.beliefs else "tentative",
+        entry.decay_factor,
+        entry.access_count,
         entry.created_at.isoformat(),
         now,
     )
@@ -654,6 +716,8 @@ def _serialize_principle(entry: MemoryEntry, now: str) -> tuple:
         _json([e.model_dump(mode="json") for e in entry.entities]),
         _json(entry.related_ids),
         entry.beliefs[0].confidence.value if entry.beliefs else "bedrock",
+        entry.decay_factor,
+        entry.access_count,
         entry.created_at.isoformat(),
         now,
     )

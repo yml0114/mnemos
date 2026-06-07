@@ -370,7 +370,7 @@ class TestHermes:
         from mnemos.embedding import Hermes
         h = Hermes()
         vec = h.embed("测试文本")
-        assert vec.shape == (384,)
+        assert vec.shape == (h.dim,)
         assert 0.9 < float(np.linalg.norm(vec)) < 1.1
 
     def test_same_text_same_vector(self):

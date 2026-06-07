@@ -136,4 +136,18 @@ class RuleJudge:
         }
 
     def _tokenize(self, text: str) -> list[str]:
-        return re.findall(r'[\u4e00-\u9fff]{1,3}|[a-zA-Z]{3,}', text.lower())
+        """改进的分词：中文 bigram/trigram + 英文词，提升中文匹配率"""
+        tokens = []
+        # English words
+        for m in re.finditer(r'[a-zA-Z]+', text.lower()):
+            tokens.append(m.group())
+        # Chinese unigrams
+        cn_chars = re.findall(r'[\u4e00-\u9fff]', text)
+        tokens.extend(cn_chars)
+        # Chinese bigrams
+        for i in range(len(cn_chars) - 1):
+            tokens.append(cn_chars[i] + cn_chars[i + 1])
+        # Chinese trigrams for better precision
+        for i in range(len(cn_chars) - 2):
+            tokens.append(cn_chars[i] + cn_chars[i + 1] + cn_chars[i + 2])
+        return tokens
