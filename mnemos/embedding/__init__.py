@@ -126,14 +126,24 @@ class Hermes:
             max_len = min(max(len(e.ids) for e in encodings), 256)
             input_ids = np.zeros((len(texts), max_len), dtype=np.int64)
             attention_mask = np.zeros((len(texts), max_len), dtype=np.int64)
+            token_type_ids = np.zeros((len(texts), max_len), dtype=np.int64)
             for i, enc in enumerate(encodings):
                 n = min(len(enc.ids), max_len)
                 input_ids[i, :n] = enc.ids[:n]
                 attention_mask[i, :n] = 1
+                if hasattr(enc, 'type_ids') and enc.type_ids:
+                    token_type_ids[i, :n] = enc.type_ids[:n]
         else:
             input_ids, attention_mask = self._simple_encode(texts)
+            token_type_ids = np.zeros_like(input_ids)
 
-        outputs = self._session.run(None, {"input_ids": input_ids, "attention_mask": attention_mask})
+        # 自动检测模型需要哪些输入
+        input_names = {inp.name for inp in self._session.get_inputs()}
+        feed = {"input_ids": input_ids, "attention_mask": attention_mask}
+        if "token_type_ids" in input_names:
+            feed["token_type_ids"] = token_type_ids
+
+        outputs = self._session.run(None, feed)
         embeddings = outputs[0]
         if len(embeddings.shape) == 2:
             embeddings = embeddings[np.newaxis, :, :]
