@@ -19,15 +19,17 @@ Mnemos — 独立记忆世界
 核心模块:
     mnemos.core          — 数据模型 (MemoryEntry, MemoryTier, BeliefRecord)
     mnemos.storage       — 存储引擎 (PalimpsestStore)
-    mnemos.retrieval     — 检索引擎 (ResonanceEngine) + 渐进注入 (Stager)
+    mnemos.retrieval     — 检索引擎 (ResonanceEngine) + BM25 + 渐进注入 (Stager)
     mnemos.curation      — 记忆去重 (Curator) + 智能合并
-    mnemos.condensation  — 记忆蒸馏 (AlchemistCondenser)
+    mnemos.condensation  — 记忆蒸馏 (AlchemistCondenser) + LLM 智能蒸馏
     mnemos.extraction    — 记忆提取 (ScribeExtractor)
     mnemos.integrations  — 框架集成 (LangChain, CrewAI)
     mnemos.temporal      — 时序推理 (Chronos) + 实体链接 (Nexus)
-    mnemos.embedding     — 本地语义嵌入 (ONNX, 零外部API)
+    mnemos.embedding     — 本地语义嵌入 (Hermes: ONNX, 零外部API)
+    mnemos.evaluation    — 评测裁判 (LLMJudge + RuleJudge)
+    mnemos.profile       — 用户画像 (Mneme: 自动画像构建)
     mnemos.viz           — 可视化 (DashboardProvider, 3D 仪表盘)
-    mnemos.mcp           — MCP 协议服务 (5 个工具)
+    mnemos.mcp           — MCP 协议服务 (6 个工具)
 """
 
 __version__ = "0.2.0"

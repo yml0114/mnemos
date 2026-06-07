@@ -246,3 +246,86 @@ class AlchemistCondenser:
             "patterns_created": len(patterns),
             "principles_created": len(principles),
         }
+
+    def llm_distill(
+        self,
+        scope_type: ScopeType = ScopeType.TENANT,
+        scope_id: str = "",
+        llm_client: Any = None,
+    ) -> list[MemoryEntry]:
+        """
+        LLM 驱动的智能蒸馏：使用 LLM 从印象中提取深层模式。
+
+        相比纯规则的 impressions_to_patterns，LLM 蒸馏能：
+        - 理解语义关联（不只依赖实体聚类）
+        - 发现隐含模式（用户自己都没意识到的规律）
+        - 生成更自然、更凝练的模式描述
+
+        Args:
+            llm_client: 符合 LLMClient 协议的对象（有 generate 方法）
+        """
+        if llm_client is None:
+            return []  # 无 LLM 时跳过
+
+        impressions = self._store.by_scope(
+            scope_type, scope_id,
+            tiers=[MemoryTier.IMPRESSION],
+            limit=200,
+        )
+
+        if len(impressions) < self.IMPRESSION_THRESHOLD:
+            return []
+
+        # 构建印象列表
+        imp_texts = "\n".join(
+            f"- [{imp.created_at.isoformat() if imp.created_at else '?'}] {imp.content}"
+            for imp in impressions[-100:]  # 最近 100 条
+        )
+
+        system = """你是记忆炼金术士。从用户的印象片段中蒸馏出行为模式。
+
+规则:
+1. 发现重复出现的主题、偏好、习惯
+2. 识别冲突或变化（如用户改变了某个偏好）
+3. 提取跨实体的通用规律
+4. 每条模式一句话，清晰简洁
+
+返回 JSON:
+{"patterns": ["模式1", "模式2", ...], "summary": "整体画像摘要"}"""
+
+        prompt = f"从以下印象中蒸馏模式:\n\n{imp_texts}"
+
+        try:
+            import asyncio
+            raw = asyncio.run(llm_client.generate(prompt, system))
+            import json
+            data = json.loads(raw)
+        except Exception:
+            return []
+
+        patterns: list[MemoryEntry] = []
+        now = datetime.now(timezone.utc)
+
+        for pat_text in data.get("patterns", [])[:5]:
+            entry = MemoryEntry(
+                entry_id=uuid.uuid4().hex[:16],
+                tier=MemoryTier.PATTERN,
+                title=pat_text[:80],
+                content=pat_text,
+                scope=scope_type,
+                scope_id=scope_id,
+                beliefs=[
+                    BeliefRecord(
+                        belief_id=uuid.uuid4().hex[:10],
+                        content=pat_text,
+                        confidence=ConfidenceLevel.TENTATIVE,
+                        adopted_at=now,
+                    )
+                ],
+                created_at=now,
+                last_accessed_at=now,
+            )
+            self._store.inscribe(entry)
+            patterns.append(entry)
+
+        return patterns

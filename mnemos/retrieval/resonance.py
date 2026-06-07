@@ -29,6 +29,7 @@ from mnemos.core.models import (
     SearchResult,
     ScopeType,
 )
+from mnemos.retrieval.bm25 import BM25Scorer
 from mnemos.storage.palimpsest import PalimpsestStore
 
 
@@ -103,6 +104,8 @@ class ResonanceEngine:
 
     def __init__(self, store: PalimpsestStore):
         self._store = store
+        self._bm25: BM25Scorer | None = None
+        self._bm25_indexed = False
 
     def search(self, query: MemoryQuery) -> list[SearchResult]:
         """执行多信号融合检索"""
@@ -145,16 +148,23 @@ class ResonanceEngine:
                     score = 1.0 - (i / max(len(semantic_hits), 1)) * 0.5
                     self._add_signal(candidates, entry.entry_id, "semantic", score)
 
-        # 关键词信号
+        # 关键词信号（FTS5 快速召回 + BM25 精确评分）
         if keywords:
+            self._ensure_bm25()
             for kw in keywords:
                 kw_hits = self._store.fts(kw, limit=20)
                 for i, entry in enumerate(kw_hits):
                     score = 0.8 - (i / max(len(kw_hits), 1)) * 0.3
-                    # 精准匹配加成
                     if kw.lower() in entry.content.lower():
                         score += 0.2
                     self._add_signal(candidates, entry.entry_id, "keyword", score)
+
+            # BM25 精确评分补充
+            if self._bm25 is not None and self._bm25_indexed:
+                bm25_results = self._bm25.score(query.query_text)
+                for doc_id, bm25_score in bm25_results[:30]:
+                    if bm25_score > 0.1:
+                        self._add_signal(candidates, doc_id, "bm25", bm25_score * 0.9)
 
         # 实体信号
         if entities:
@@ -238,6 +248,19 @@ class ResonanceEngine:
 
         return results
 
+    def _ensure_bm25(self) -> None:
+        """确保 BM25 索引已构建"""
+        if self._bm25_indexed:
+            return
+        try:
+            self._bm25 = BM25Scorer()
+            all_entries = self._store.all(limit=500)
+            docs = [(e.entry_id, e.content) for e in all_entries]
+            self._bm25.index(docs)
+            self._bm25_indexed = True
+        except Exception:
+            self._bm25_indexed = False
+
     def _add_signal(
         self, candidates: dict[str, dict[str, float]],
         entry_id: str, signal_name: str, score: float
@@ -255,6 +278,7 @@ class ResonanceEngine:
         weights = {
             "semantic": query.semantic_weight,
             "keyword": query.keyword_weight,
+            "bm25": query.keyword_weight * 0.8,
             "entity": query.entity_weight,
             "temporal": query.temporal_weight,
         }
