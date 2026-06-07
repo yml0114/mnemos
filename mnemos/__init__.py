@@ -30,4 +30,4 @@ Mnemos — 独立记忆世界
     mnemos.mcp           — MCP 协议服务 (5 个工具)
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
