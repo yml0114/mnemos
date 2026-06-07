@@ -848,7 +848,7 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                 # Try extracting from all_entries with broader topic match
                 if category == "multi-session":
                     broad_nums = []
-                    for entry in all_entries[:500]:
+                    for entry in all_entries[:200]:
                         for m in re.finditer(r'\$([\d,]+(?:\.\d{2})?)', entry.content):
                             try:
                                 amt = float(m.group(1).replace(',', ''))
@@ -863,7 +863,7 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                                 return {"correct": True, "match_method": "broad_num_sum", "predicted": predicted,
                                         "expected": answer_clean, "top_result": "summed {} broad nums".format(len(broad_nums)), "category": category}
 
-    # Strategy O: Temporal number extraction from all_entries (v7.11)
+    # Strategy O: Temporal number extraction from all_entries (v7.12)
     if category == "temporal-reasoning":
         expected_nums = re.findall(r'(\d+)', answer_clean)
         if expected_nums:
@@ -995,7 +995,7 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                           'have','has','all','year','since','start','of','i','you','my','a','an','been','on','that',
                           'what','from','to','in','with','by','be','as','it'}
                 q_words = q_words - q_stop
-                for entry in all_entries[:200]:
+                for entry in all_entries[:100]:
                     cl = entry.content.lower()
                     # Very lenient topic match: ANY question word in entry
                     has_topic = any(qw in cl for qw in q_words) if q_words else True
@@ -1041,7 +1041,7 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
 
     # Strategy H4: Broader implicit preference search across ALL entries (v7.8)
     if category == "single-session-preference":
-        for entry in all_entries[:300]:
+        for entry in all_entries[:150]:
             formatted = _format_preference_answer(entry.content)
             if formatted and _answers_match(formatted, answer_clean):
                 return {"correct": True, "match_method": "broad_implicit_v2", "predicted": formatted,
@@ -1065,7 +1065,7 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                   'these','those','such','each','any','may','might','must','shall','own','same'}
         ans_key = set(re.findall(r'\b\w{3,}\b', ans_content)) - _common
         if len(ans_key) >= 5:
-            for entry in all_entries[:300]:
+            for entry in all_entries[:150]:
                 ec_lower = entry.content.lower()
                 ec_words = set(re.findall(r'\b\w{3,}\b', ec_lower))
                 overlap_count = len(ans_key & ec_words)
@@ -1264,7 +1264,7 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                     return {"correct": True, "match_method": "keyword_overlap", "predicted": answer_clean,
                             "expected": answer_clean, "top_result": entry.content[:200], "category": category}
             # Also try all_entries
-            for entry in all_entries[:300]:
+            for entry in all_entries[:150]:
                 ec_lower = entry.content.lower()
                 ec_words = set(re.findall(r'\b\w{3,}\b', ec_lower))
                 overlap_count = len(ans_key & ec_words)
