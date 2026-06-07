@@ -28,6 +28,7 @@ dev = [
 
 [project.scripts]
 mnemos-server = "mnemos.mcp.server:main"
+mnemos-dashboard = "mnemos.viz.dashboard:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mnemos"]
