@@ -8,12 +8,29 @@
 
 from __future__ import annotations
 
+import sys
 import uuid
 from datetime import datetime, timezone
-from enum import StrEnum
-from typing import Any, Self
+from typing import Any
+
+try:
+    from typing import Self
+except ImportError:
+    from typing import TypeVar
+    Self = TypeVar("Self", bound="BaseModel")
 
 from pydantic import BaseModel, Field, model_validator
+
+# StrEnum 在 Python 3.11+ 才有，3.10 以下用 StrEnum 兼容层
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        """StrEnum backport for Python < 3.11"""
+        def __str__(self) -> str:
+            return self.value
 
 
 # ── 记忆分层 ────────────────────────────────────────────────
