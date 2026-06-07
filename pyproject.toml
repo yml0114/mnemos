@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mnemos"
+version = "0.1.0"
+description = "独立记忆世界 — 可移植的多层AI记忆系统，支持向量检索、图谱关系、时序推理与信念修正"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "httpx>=0.27",
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+all = [
+    "sqlite-vec>=0.1",
+    "openai>=1.0",
+    "numpy>=1.24",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+mnemos-server = "mnemos.mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mnemos"]
