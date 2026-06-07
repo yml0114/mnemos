@@ -2,9 +2,10 @@
 
 > *Memory Palimpsest — A portable multi-tier AI memory system with 6-signal fusion retrieval, temporal reasoning, belief revision, and a 3D galaxy dashboard.*
 
+[![CI](https://github.com/yml0114/mnemos/actions/workflows/ci.yml/badge.svg)](https://github.com/yml0114/mnemos/actions)
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-48%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-75%20passed-brightgreen)](tests/)
 [![Version](https://img.shields.io/badge/version-0.2.0-818cf8)](pyproject.toml)
 [![MCP](https://img.shields.io/badge/protocol-MCP-orange)](mnemos/mcp/)
 

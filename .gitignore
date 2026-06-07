@@ -11,3 +11,5 @@ htmlcov/
 .pytest_cache/
 *.db
 results/
+.cache/
+mnemos/embeddings/
