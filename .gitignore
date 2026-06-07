@@ -13,3 +13,5 @@ htmlcov/
 results/
 .cache/
 mnemos/embeddings/
+*.db-wal
+*.db-shm

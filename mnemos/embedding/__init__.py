@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import struct
 from pathlib import Path
 
@@ -39,6 +40,11 @@ class Hermes:
         self._try_init_onnx()
 
     def _try_init_onnx(self) -> None:
+        # 本地无模型文件且禁止下载 → 直接跳过，不卡网络
+        onnx_path = self.cache_dir / "model.onnx"
+        if not onnx_path.exists() and os.environ.get("MNEMOS_NO_DOWNLOAD", ""):
+            self._ready = False
+            return
         try:
             import onnxruntime as ort
             model_path = self._ensure_model()
@@ -54,6 +60,16 @@ class Hermes:
         onnx_path = self.cache_dir / "model.onnx"
         if onnx_path.exists():
             return onnx_path
+        # 如果环境变量禁用下载或无网络，直接跳过
+        if os.environ.get("MNEMOS_NO_DOWNLOAD"):
+            return None
+        try:
+            import httpx
+            resp = httpx.head("https://huggingface.co", timeout=3.0)
+            if resp.status_code != 200:
+                return None
+        except Exception:
+            return None
         try:
             from huggingface_hub import hf_hub_download
             import shutil
@@ -69,6 +85,15 @@ class Hermes:
     def _load_tokenizer(self):
         tokenizer_path = self.cache_dir / "tokenizer.json"
         if not tokenizer_path.exists():
+            if os.environ.get("MNEMOS_NO_DOWNLOAD"):
+                return None
+            try:
+                import httpx
+                resp = httpx.head("https://huggingface.co", timeout=3.0)
+                if resp.status_code != 200:
+                    return None
+            except Exception:
+                return None
             try:
                 from huggingface_hub import hf_hub_download
                 import shutil

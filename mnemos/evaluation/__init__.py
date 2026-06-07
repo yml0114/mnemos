@@ -8,6 +8,7 @@ LLM Judge — 答案评判模块
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -35,9 +36,14 @@ class LLMJudge:
     """使用 LLM 评判答案正确性。"""
 
     def __init__(self, api_key: str = "", model: str = "gpt-4o", base_url: str = ""):
-        self.api_key = api_key
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.model = model
         self.base_url = base_url
+
+    def evaluate(self, prediction: str, reference: str, question: str = "") -> float:
+        """统一评估接口。返回 0.0-1.0 分数。"""
+        result = self.judge(question=question, ground_truth=reference, system_answer=prediction)
+        return result["score"]
 
     def judge(self, question: str, ground_truth: str, system_answer: str) -> dict[str, Any]:
         """评判单条答案。返回 {"score": float, "explanation": str}"""
@@ -97,6 +103,11 @@ class LLMJudge:
 
 class RuleJudge:
     """规则评判器（无 LLM 依赖）。用于快速验证和 CI 环境。"""
+
+    def evaluate(self, prediction: str, reference: str, question: str = "") -> float:
+        """统一评估接口。返回 0.0-1.0 分数。"""
+        result = self.judge(question=question, ground_truth=reference, system_answer=prediction)
+        return result["score"]
 
     def judge(self, question: str, ground_truth: str, system_answer: str) -> dict[str, Any]:
         """基于关键词重叠的简单评判"""
