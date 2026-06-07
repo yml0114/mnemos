@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  mnemos:
+    build: .
+    ports:
+      - "8765:8765"
+    volumes:
+      - mnemos_data:/data
+    environment:
+      - MNEMOS_DB_PATH=/data/memory.db
+    restart: unless-stopped
+
+  # MCP 服务（供 Agent 接入）
+  mnemos-mcp:
+    build: .
+    command: python -m mnemos.mcp.server
+    volumes:
+      - mnemos_data:/data
+    environment:
+      - MNEMOS_DB_PATH=/data/memory.db
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+volumes:
+  mnemos_data:

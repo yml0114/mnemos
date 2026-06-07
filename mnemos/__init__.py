@@ -19,7 +19,8 @@ Mnemos — 独立记忆世界
 核心模块:
     mnemos.core          — 数据模型 (MemoryEntry, MemoryTier, BeliefRecord)
     mnemos.storage       — 存储引擎 (PalimpsestStore)
-    mnemos.retrieval     — 检索引擎 (ResonanceEngine)
+    mnemos.retrieval     — 检索引擎 (ResonanceEngine) + 渐进注入 (Stager)
+    mnemos.curation      — 记忆去重 (Curator) + 智能合并
     mnemos.condensation  — 记忆蒸馏 (AlchemistCondenser)
     mnemos.extraction    — 记忆提取 (ScribeExtractor)
     mnemos.viz           — 可视化 (DashboardProvider, 3D 仪表盘)
