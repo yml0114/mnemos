@@ -2,7 +2,7 @@
 本地语义嵌入引擎 — Hermes
 
 零外部 API 依赖的向量嵌入方案：
-- ONNX Runtime 运行本地模型（384维，~24MB）
+- ONNX Runtime 运行本地模型（1024维，bge-m3 int8）
 - 自动降级：ONNX → n-gram 哈希投影
 - 轻量加载：huggingface_hub + tokenizers，不依赖 transformers/optimum
 """
@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 DEFAULT_MODEL = "BAAI/bge-m3"
-EMBEDDING_DIM = 384
+EMBEDDING_DIM = 1024
 CACHE_DIR = Path.home() / ".cache" / "mnemos" / "embeddings"
 
 
@@ -57,9 +57,20 @@ class Hermes:
             self._ready = False
 
     def _ensure_model(self) -> Path | None:
-        onnx_path = self.cache_dir / "model.onnx"
-        if onnx_path.exists():
-            return onnx_path
+        # 优先使用 int8 量化模型（自包含，无需外部数据）
+        for name in ["model_int8.onnx", "model.onnx"]:
+            onnx_path = self.cache_dir / name
+            if onnx_path.exists() and onnx_path.stat().st_size > 1_000_000:
+                return onnx_path
+        # 检查 HF 缓存中的 int8 模型
+        hf_cache = self.cache_dir / "hf_cache"
+        if hf_cache.exists():
+            for root, dirs, files in os.walk(hf_cache):
+                for f in files:
+                    if f == "model_int8.onnx":
+                        p = Path(root) / f
+                        if p.stat().st_size > 1_000_000:
+                            return p
         # 如果环境变量禁用下载或无网络，直接跳过
         if os.environ.get("MNEMOS_NO_DOWNLOAD"):
             return None

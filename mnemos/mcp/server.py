@@ -5,18 +5,24 @@
 基于 mcp SDK 的 FastMCP 实现，支持 stdio transport。
 
 暴露的工具:
-  - mnemos_remember:  写入一条记忆
-  - mnemos_recall:    检索记忆（多信号融合）
-  - mnemos_forget:    软删除记忆
-  - mnemos_revise:    修正信念
-  - mnemos_condense:  触发记忆凝练
-  - mnemos_stats:     查看记忆统计
+  - mnemos: 统一记忆工具，通过 action 参数分发:
+      remember  — 写入一条记忆
+      recall    — 检索记忆（6路信号融合）
+      revise    — 修正信念
+      condense  — 触发记忆凝练
+      stats     — 查看记忆统计
+      touch     — 刷新衰减
+      decay     — 批量衰减
+      neglected — 即将遗忘的记忆
+      profile   — 用户画像
+      stage     — 渐进式上下文注入
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -59,31 +65,17 @@ def _get_engine() -> ResonanceEngine:
     return _engine
 
 
-# ── 工具定义 ─────────────────────────────────────────────
+# ── Action 处理器 ─────────────────────────────────────────
 
+def _do_remember(p: dict) -> str:
+    content = p["content"]
+    title = p.get("title", "")
+    scope_type = p.get("scope_type", "tenant")
+    scope_id = p.get("scope_id", "")
+    tags = p.get("tags")
+    entities = p.get("entities")
+    related_to = p.get("related_to")
 
-@mcp.tool()
-def mnemos_remember(
-    content: str,
-    title: str = "",
-    scope_type: str = "tenant",
-    scope_id: str = "",
-    tags: list[str] | None = None,
-    entities: list[dict[str, str]] | None = None,
-    related_to: list[str] | None = None,
-) -> str:
-    """将一条记忆写入记忆世界。记忆会自动归类到印象层(impression)，
-    后续可通过凝练升级为模式(pattern)或原则(principle)。
-
-    Args:
-        content: 要记住的内容
-        title: 简短标题（可选，默认取内容前80字）
-        scope_type: 记忆归属范围(universe/tenant/persona/session)，默认 tenant
-        scope_id: 范围标识（用户ID/Agent ID/Session ID）
-        tags: 标签列表
-        entities: 关联实体列表，每项含 label/entity_type/description
-        related_to: 关联的记忆ID列表
-    """
     store = _get_store()
     now = datetime.now(timezone.utc)
 
@@ -113,45 +105,24 @@ def mnemos_remember(
     return json.dumps({"status": "remembered", "entry_id": entry_id}, ensure_ascii=False)
 
 
-@mcp.tool()
-def mnemos_recall(
-    query: str,
-    keywords: list[str] | None = None,
-    entities: list[str] | None = None,
-    tiers: list[str] | None = None,
-    scope_type: str = "",
-    scope_id: str = "",
-    after: str = "",
-    before: str = "",
-    max_results: int = 20,
-) -> str:
-    """从记忆世界中检索记忆。支持语义搜索、关键词过滤、实体关联、
-    时间范围和范围过滤。多信号融合排序。
+def _do_recall(p: dict) -> str:
+    query = p["query"]
+    keywords = p.get("keywords")
+    entities = p.get("entities")
+    tiers = p.get("tiers")
+    scope_type = p.get("scope_type", "")
+    scope_id = p.get("scope_id", "")
+    after = p.get("after", "")
+    before = p.get("before", "")
+    max_results = p.get("max_results", 20)
 
-    Args:
-        query: 搜索查询文本
-        keywords: 关键词列表
-        entities: 限定实体标签
-        tiers: 限定记忆层次(impression/pattern/principle)
-        scope_type: 范围类型(universe/tenant/persona/session)
-        scope_id: 范围标识
-        after: 起始时间 ISO 格式
-        before: 结束时间 ISO 格式
-        max_results: 最大返回数量，默认20
-    """
     engine = _get_engine()
 
     scopes = []
     if scope_type and scope_id:
-        scopes = [
-            ContextScope(
-                scope_type=ScopeType(scope_type),
-                scope_id=scope_id,
-            )
-        ]
+        scopes = [ContextScope(scope_type=ScopeType(scope_type), scope_id=scope_id)]
 
     tier_list = [MemoryTier(t) for t in tiers] if tiers else None
-
     dt_after = datetime.fromisoformat(after) if after else None
     dt_before = datetime.fromisoformat(before) if before else None
 
@@ -191,21 +162,12 @@ def mnemos_recall(
     )
 
 
-@mcp.tool()
-def mnemos_revise(
-    entry_id: str,
-    old_belief_id: str,
-    new_content: str,
-    source: str = "",
-) -> str:
-    """修正记忆中的信念。旧信念不会被删除，作为历史版本保留。
+def _do_revise(p: dict) -> str:
+    entry_id = p["entry_id"]
+    old_belief_id = p["old_belief_id"]
+    new_content = p["new_content"]
+    source = p.get("source", "")
 
-    Args:
-        entry_id: 要修正的记忆ID
-        old_belief_id: 被修正的旧信念ID
-        new_content: 修正后的信念内容
-        source: 修正来源（Agent名/对话ID）
-    """
     store = _get_store()
     entry = store.by_id(entry_id)
     if entry is None:
@@ -231,90 +193,46 @@ def mnemos_revise(
             "status": "revised",
             "entry_id": entry.entry_id,
             "new_belief_id": new_belief.belief_id,
-            "superseded_count": len(
-                [b for b in entry.beliefs if b.superseded_by is not None]
-            ),
+            "superseded_count": len([b for b in entry.beliefs if b.superseded_by is not None]),
         },
         ensure_ascii=False,
     )
 
 
-@mcp.tool()
-def mnemos_condense(
-    scope_type: str = "tenant",
-    scope_id: str = "",
-) -> str:
-    """触发记忆凝练：将印象蒸馏为模式，或将模式结晶为原则。
-
-    Args:
-        scope_type: 范围类型(universe/tenant/persona/session)
-        scope_id: 范围标识
-    """
+def _do_condense(p: dict) -> str:
     from mnemos.condensation.alchemist import AlchemistCondenser
 
     store = _get_store()
     condenser = AlchemistCondenser(store)
     result = condenser.auto_condense(
-        scope_type=ScopeType(scope_type),
-        scope_id=scope_id,
+        scope_type=ScopeType(p.get("scope_type", "tenant")),
+        scope_id=p.get("scope_id", ""),
     )
     return json.dumps({"status": "condensed", **result}, ensure_ascii=False)
 
 
-@mcp.tool()
-def mnemos_stats() -> str:
-    """查看记忆世界统计信息。"""
+def _do_stats(_p: dict) -> str:
     store = _get_store()
     return json.dumps({"status": "ok", "stats": store.count()}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
-def mnemos_touch(
-    entry_id: str,
-    tier: str = "impression",
-) -> str:
-    """标记一条记忆为被访问，刷新衰减并增加访问计数。
-
-    Args:
-        entry_id: 记忆ID
-        tier: 记忆层次(impression/pattern/principle)
-    """
-    from mnemos.core.models import MemoryTier
+def _do_touch(p: dict) -> str:
+    entry_id = p["entry_id"]
+    tier = MemoryTier(p.get("tier", "impression"))
     store = _get_store()
-    tier_enum = MemoryTier(tier)
-    store.touch(entry_id, tier_enum)
+    store.touch(entry_id, tier)
     return json.dumps({"status": "touched", "entry_id": entry_id}, ensure_ascii=False)
 
 
-@mcp.tool()
-def mnemos_decay(
-    rate: float = 0.01,
-) -> str:
-    """对长期未访问的记忆施加衰减。衰减归零的记忆将被自动清除。
-
-    Args:
-        rate: 每次衰减量（默认0.01）
-    """
+def _do_decay(p: dict) -> str:
     store = _get_store()
-    affected = store.decay_stale(rate)
+    affected = store.decay_stale(p.get("rate", 0.01))
     return json.dumps({"status": "decayed", "affected_entries": affected}, ensure_ascii=False)
 
 
-@mcp.tool()
-def mnemos_neglected(
-    min_decay: float = 0.0,
-    max_decay: float = 0.3,
-    limit: int = 20,
-) -> str:
-    """检索衰减严重、即将被遗忘的记忆，可用于复习或决策是否保留。
-
-    Args:
-        min_decay: 最小衰减值（默认0.0）
-        max_decay: 最大衰减值（默认0.3）
-        limit: 最大返回数量（默认20）
-    """
+def _do_neglected(p: dict) -> str:
     store = _get_store()
-    entries = store.by_decay(min_decay, max_decay, limit)
+    entries = store.by_decay(p.get("min_decay", 0.0), p.get("max_decay", 0.3), p.get("limit", 20))
     return json.dumps(
         {
             "found": len(entries),
@@ -336,14 +254,118 @@ def mnemos_neglected(
     )
 
 
+def _do_profile(p: dict) -> str:
+    store = _get_store()
+    from mnemos.profile import Mneme
+
+    engine = Mneme(store)
+    profile = engine.build(p.get("scope_id", ""))
+    return json.dumps(
+        {
+            "status": "ok",
+            "profile": {
+                "preferences": profile.preferences,
+                "tools": profile.tools,
+                "projects": profile.projects,
+                "static": profile.static,
+                "dynamic": profile.dynamic,
+                "summary": engine.summary(profile),
+            },
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _do_stage(p: dict) -> str:
+    engine = _get_engine()
+    from mnemos.retrieval.stager import Stager
+
+    q = MemoryQuery(query_text=p["query"])
+    scope_type = p.get("scope_type", "tenant")
+    scope_id = p.get("scope_id", "")
+    if scope_type:
+        q.scopes = [ContextScope(scope_type=ScopeType(scope_type), scope_id=scope_id or "default")]
+    results = engine.search(q)
+    stager = Stager(core_max=p.get("core_max", 3), context_max=p.get("context_max", 5))
+    plan = stager.plan(results)
+
+    return json.dumps(
+        {
+            "status": "ok",
+            "core": [{"content": m.formatted, "resonance": round(m.resonance, 3)} for m in plan.core],
+            "context": [{"content": m.formatted, "resonance": round(m.resonance, 3)} for m in plan.context],
+            "archive_count": len(plan.archive),
+            "estimated_tokens": plan.estimated_tokens,
+            "baseline_tokens": plan.baseline_tokens,
+            "reduction_pct": round(plan.reduction_pct * 100, 1),
+            "system_prompt": stager.render_system(plan),
+            "context_prompt": stager.render_context(plan),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+# ── 统一入口 ──────────────────────────────────────────────
+
+_ACTIONS = {
+    "remember": _do_remember,
+    "recall": _do_recall,
+    "revise": _do_revise,
+    "condense": _do_condense,
+    "stats": _do_stats,
+    "touch": _do_touch,
+    "decay": _do_decay,
+    "neglected": _do_neglected,
+    "profile": _do_profile,
+    "stage": _do_stage,
+}
+
+
+@mcp.tool()
+def mnemos(action: str, params: str = "{}") -> str:
+    """记忆世界统一入口。通过 action 参数调用不同功能。
+
+    action  — 操作名称，必填。可选值:
+      remember  — 写入记忆。params: content(必填), title, scope_type, scope_id, tags, entities, related_to
+      recall    — 检索记忆。params: query(必填), keywords, entities, tiers, scope_type, scope_id, after, before, max_results
+      revise    — 修正信念。params: entry_id(必填), old_belief_id(必填), new_content(必填), source
+      condense  — 触发凝练。params: scope_type, scope_id
+      stats     — 记忆统计。无必填参数
+      touch     — 刷新衰减。params: entry_id(必填), tier
+      decay     — 批量衰减。params: rate
+      neglected — 遗忘预警。params: min_decay, max_decay, limit
+      profile   — 用户画像。params: scope_id
+      stage     — 分层注入。params: query(必填), scope_type, scope_id, core_max, context_max
+
+    params — JSON 字符串，传递给对应 action 的参数。
+
+    示例:
+      mnemos(action="remember", params='{"content":"用户偏好暗色主题","tags":["preference"]}')
+      mnemos(action="recall", params='{"query":"用户喜欢什么"}')
+      mnemos(action="stats")
+      mnemos(action="profile")
+    """
+    handler = _ACTIONS.get(action)
+    if not handler:
+        return json.dumps(
+            {"status": "error", "message": f"Unknown action: {action}. Available: {', '.join(_ACTIONS)}"},
+            ensure_ascii=False,
+        )
+    try:
+        p = json.loads(params) if params else {}
+        return handler(p)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+
 # ── 服务器入口 ───────────────────────────────────────────
 
 
 def main() -> None:
     """MCP 服务器入口（通过 stdio 通信）"""
-    # 初始化 store 以打印就绪信息
     store = _get_store()
-    import sys
     print(f"Mnemos server ready — {store.count()}", file=sys.stderr)
 
     mcp.run(transport="stdio")
