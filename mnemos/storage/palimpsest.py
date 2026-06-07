@@ -305,14 +305,27 @@ class PalimpsestStore:
                 return _deserialize(dict(row), tier)
         return None
 
+    @staticmethod
+    def _sanitize_fts5(query: str) -> str:
+        """清理 FTS5 特殊字符，避免语法错误。"""
+        # FTS5 保留字符: * ( ) [ ] - + " 以及 AND OR NOT NEAR
+        # 策略：移除所有 FTS5 语法字符，保留纯文本
+        special = set('*()[]-+"%')
+        cleaned = "".join(c for c in query if c not in special)
+        # 去掉可能残留的 AND/OR/NOT 大写词（简单处理：拆词重拼）
+        tokens = cleaned.split()
+        safe = [t for t in tokens if t.upper() not in ("AND", "OR", "NOT", "NEAR")]
+        return " ".join(safe) if safe else cleaned.strip() or "*"
+
     def fts(self, query: str, limit: int = 20) -> list[MemoryEntry]:
         """全文搜索。FTS5 先尝试；中文回退 LIKE。"""
+        safe_query = self._sanitize_fts5(query)
         rows = self.db.execute(
             """SELECT i.* FROM impressions i
                JOIN impression_fts f ON i.rowid = f.rowid
                WHERE impression_fts MATCH ?
                ORDER BY rank LIMIT ?""",
-            (query, limit),
+            (safe_query, limit),
         ).fetchall()
         if rows:
             return [_deserialize(dict(r), MemoryTier.IMPRESSION) for r in rows]

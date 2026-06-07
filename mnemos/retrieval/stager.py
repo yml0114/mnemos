@@ -117,12 +117,13 @@ class Stager:
                 staged.formatted = self._format_archive(staged)
                 plan.archive.append(staged)
 
-        # 估算最终 Token
+        # 估算最终 Token（格式化文本可能比原始内容更长，
+        # 因为注入了 [TIER] 前缀等标记；缩减率最低为 0）
         plan.estimated_tokens = self._estimate_tokens(self.render_full(plan))
         if plan.baseline_tokens > 0:
-            plan.reduction_pct = round(
+            plan.reduction_pct = max(0.0, round(
                 (1 - plan.estimated_tokens / plan.baseline_tokens) * 100, 1
-            )
+            ))
 
         return plan
 
