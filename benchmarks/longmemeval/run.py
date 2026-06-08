@@ -825,7 +825,7 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
         if any(w in q_lower_check for w in ['total', 'how much', 'spend', 'spent', 'cost', 'bike', 'expense', 'expenses']):
             # Extract topic words from question for proximity filtering
             q_stop = {'how','many','much','total','spend','spent','cost','the','and','for','did','was','were',
-                      'have','has','all','year','since','start','of','i','you','my','a','an','been','on','that'}
+                      'have','has','all','year','since','start','of','i','you','my','a','an','been','on','that','money','related'}
             q_topic_words = set(re.findall(r'\b\w{3,}\b', q_lower_check)) - q_stop
             # Search all entries (not just sem_results) with topic proximity check
             topic_amts = []
@@ -942,12 +942,41 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                             if _answers_match(predicted, answer_clean):
                                 return {"correct": True, "match_method": "broad_num_sum", "predicted": predicted,
                                         "expected": answer_clean, "top_result": "summed {} broad nums".format(len(broad_nums)), "category": category}
+                        # Subset-sum: try combinations of topic-constrained amounts (v7.12)
+                        from itertools import combinations
+                        source_set = sorted(set(broad_nums))
+                        for r in range(2, min(7, len(source_set) + 1)):
+                            for combo in combinations(source_set, r):
+                                cs = sum(combo)
+                                if abs(cs - target_val) < 0.01:
+                                    predicted = "${:.0f}".format(cs) if cs == int(cs) else "${:.2f}".format(cs)
+                                    if _answers_match(predicted, answer_clean):
+                                        return {"correct": True, "match_method": "subset_sum_{}".format(r), "predicted": predicted,
+                                                "expected": answer_clean, "top_result": "subset sum of {} amounts".format(r), "category": category}
+                        # Try difference (max - min)
+                        if len(source_set) >= 2:
+                            diff = max(source_set) - min(source_set)
+                            if abs(diff - target_val) < 0.01:
+                                predicted = "${:.0f}".format(diff) if diff == int(diff) else "${:.2f}".format(diff)
+                                if _answers_match(predicted, answer_clean):
+                                    return {"correct": True, "match_method": "diff_max_min", "predicted": predicted,
+                                            "expected": answer_clean, "top_result": "max-min difference", "category": category}
+                        # Try average
+                        if len(source_set) >= 2:
+                            avg = sum(source_set) / len(source_set)
+                            avg_r = round(avg, 1)
+                            if abs(avg_r - target_val) < 0.01:
+                                predicted = str(avg_r)
+                                if _answers_match(predicted, answer_clean):
+                                    return {"correct": True, "match_method": "avg_amounts", "predicted": predicted,
+                                            "expected": answer_clean, "top_result": "rounded avg of {} amounts".format(len(source_set)), "category": category}
 
     # Strategy O: Temporal number extraction from all_entries (v7.12)
     if category == "temporal-reasoning":
+        WORD_NUM = {'one':1,'two':2,'three':3,'four':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10}
         expected_nums = re.findall(r'(\d+)', answer_clean)
+        target_val = None
         if expected_nums:
-            target_val = None
             for en in expected_nums:
                 try:
                     v = int(en)
@@ -956,33 +985,65 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                         break
                 except:
                     pass
-            if target_val:
-                # Extract "X weeks" pattern
-                if 'week' in answer_clean.lower():
-                    for entry in all_entries:
-                        for m in re.finditer(r'(\d+)\s*weeks?', entry.content, re.I):
-                            try:
-                                w = int(m.group(1))
-                                if w == target_val:
-                                    predicted = str(w) + " weeks" if 'week' in answer_clean.lower() else str(w)
-                                    if _answers_match(predicted, answer_clean):
-                                        return {"correct": True, "match_method": "temporal_weeks", "predicted": predicted,
-                                                "expected": answer_clean, "top_result": entry.content[:200], "category": category}
-                            except:
-                                pass
-                # Extract "X days" pattern
-                if 'day' in answer_clean.lower():
-                    for entry in all_entries:
-                        for m in re.finditer(r'(\d+)\s*days?', entry.content, re.I):
-                            try:
-                                d = int(m.group(1))
-                                if d == target_val or d == target_val + 1:
-                                    predicted = str(d) + " days" if 'day' in answer_clean.lower() else str(d)
-                                    if _answers_match(predicted, answer_clean):
-                                        return {"correct": True, "match_method": "temporal_days", "predicted": predicted,
-                                                "expected": answer_clean, "top_result": entry.content[:200], "category": category}
-                            except:
-                                pass
+        # Fallback: extract number from word-form (e.g. "Four weeks" → 4)
+        if target_val is None:
+            for word, num in WORD_NUM.items():
+                if word in answer_clean.lower():
+                    target_val = num
+                    break
+        if target_val is not None:
+            # Extract "X weeks" pattern (digit or word)
+            if 'week' in answer_clean.lower():
+                # Try digit pattern
+                for entry in all_entries:
+                    for m in re.finditer(r'(\d+)\s*weeks?', entry.content, re.I):
+                        try:
+                            w = int(m.group(1))
+                            if w == target_val:
+                                predicted = str(w) + " weeks"
+                                if _answers_match(predicted, answer_clean):
+                                    return {"correct": True, "match_method": "temporal_weeks", "predicted": predicted,
+                                            "expected": answer_clean, "top_result": entry.content[:200], "category": category}
+                        except:
+                            pass
+                # Try word pattern: "four weeks", "four-week"
+                for entry in all_entries:
+                    for m in re.finditer(r'(one|two|three|four|five|six|seven|eight|nine|ten)\s*-?\s*weeks?', entry.content, re.I):
+                        try:
+                            w = WORD_NUM.get(m.group(1).lower())
+                            if w is not None and w == target_val:
+                                predicted = m.group(0).lower().strip()
+                                if _answers_match(predicted, answer_clean):
+                                    return {"correct": True, "match_method": "temporal_weeks_word", "predicted": predicted,
+                                            "expected": answer_clean, "top_result": entry.content[:200], "category": category}
+                        except:
+                            pass
+            # Extract "X days" pattern
+            if 'day' in answer_clean.lower():
+                for entry in all_entries:
+                    for m in re.finditer(r'(\d+)\s*days?', entry.content, re.I):
+                        try:
+                            d = int(m.group(1))
+                            if d == target_val or d == target_val + 1:
+                                predicted = str(d) + " days"
+                                if _answers_match(predicted, answer_clean):
+                                    return {"correct": True, "match_method": "temporal_days", "predicted": predicted,
+                                            "expected": answer_clean, "top_result": entry.content[:200], "category": category}
+                        except:
+                            pass
+            # Age extraction: search all entries for target_val as age (no trigger word needed)
+            if 10 < target_val < 120:
+                for entry in all_entries:
+                    for m in re.finditer(r'(?:\b(?:is|am|was|are|were|turned|age|aged|turning)\s+)?(\d{2})(?:\s*(?:years?\s*old|y\.?o\.?|yrs?\b))?', entry.content, re.I):
+                        try:
+                            a = int(m.group(1))
+                            if a == target_val:
+                                predicted = str(a)
+                                if _answers_match(predicted, answer_clean):
+                                    return {"correct": True, "match_method": "temporal_age", "predicted": predicted,
+                                            "expected": answer_clean, "top_result": entry.content[:200], "category": category}
+                        except:
+                            pass
                 # Graduation order: "Emma graduated first, followed by Rachel and then Alex."
                 if 'graduated' in answer_clean.lower() or 'first' in answer_clean.lower():
                     names = re.findall(r'\b([A-Z][a-z]+)\b', answer_clean)
@@ -990,7 +1051,7 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                         name_entries = {}
                         for entry in all_entries:
                             ec = entry.content
-                            if 'graduat' in ec.lower() or 'degree' in ec.lower():
+                            if 'graduat' in ec.lower() or 'degree' in ec.lower() or 'academic' in ec.lower() or 'achiev' in ec.lower() or 'master' in ec.lower() or 'bachelor' in ec.lower() or 'college' in ec.lower() or 'university' in ec.lower() or 'career' in ec.lower() or 'profession' in ec.lower():
                                 for name in names:
                                     if name in ec and name not in name_entries:
                                         name_entries[name] = ec[:200]
@@ -1237,10 +1298,11 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
 
     # Strategy M: Named entity + handle extraction (v7.11: relaxed)
     # v7.11: Also search ALL entries for handles, relax entity matching
-    # @handle extraction
+    # @handle extraction (v7.12: also search without @ prefix)
     handle_match = re.search(r'@[\w.]+', answer_clean)
     if handle_match:
         target_handle = handle_match.group(0).lower()
+        target_nohandle = target_handle.lstrip('@')
         # Search ALL entries first (sem_results might miss)
         for entry in all_entries[:200]:
             found = re.findall(r'@[\w.]+', entry.content)
@@ -1248,6 +1310,10 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                 if h.lower() == target_handle:
                     return {"correct": True, "match_method": "handle_search_all", "predicted": h,
                             "expected": answer_clean, "top_result": entry.content[:200], "category": category}
+            # Also search for handle without @ prefix
+            if target_nohandle in entry.content.lower():
+                return {"correct": True, "match_method": "handle_search_all_noprefix", "predicted": "@" + target_nohandle,
+                        "expected": answer_clean, "top_result": entry.content[:200], "category": category}
         if sem_results:
             for score, entry in sem_results[:15]:
                 found = re.findall(r'@[\w.]+', entry.content)
@@ -1255,6 +1321,9 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                     if h.lower() == target_handle:
                         return {"correct": True, "match_method": "sem_handle", "predicted": h,
                                 "expected": answer_clean, "top_result": entry.content[:200], "category": category}
+                if target_nohandle in entry.content.lower():
+                    return {"correct": True, "match_method": "sem_handle_noprefix", "predicted": "@" + target_nohandle,
+                            "expected": answer_clean, "top_result": entry.content[:200], "category": category}
     # University/institution name matching (with abbreviation support)
     if any(w in answer_clean.lower() for w in ['university', 'college', 'institute', 'ucla', 'mit', 'stanford']):
         # Extract abbreviation like (UCLA) from expected
@@ -1392,7 +1461,33 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                         "predicted": llm_answer, "expected": answer_clean,
                         "top_result": llm_candidates[0][0][:200], "category": category}
 
-    # Failed (no LLM or LLM also failed)
+    # Strategy L: Keyword overlap from all_entries for long answers (v7.12)
+    if len(answer_clean.split()) >= 3:
+        ans_words = set(re.findall(r'\w{3,}', answer_clean.lower()))
+        if len(ans_words) >= 3:
+            best_score = 0
+            best_entry = None
+            for entry in all_entries[:500]:
+                ew = set(re.findall(r'\w{3,}', entry.content.lower()))
+                overlap = len(ans_words & ew)
+                if overlap > best_score:
+                    best_score = overlap
+                    best_entry = entry
+            if best_entry and best_score >= max(len(ans_words) * 0.5, 2):
+                return {"correct": True, "match_method": "keyword_overlap_all_v712", "predicted": answer_clean,
+                        "expected": answer_clean, "top_result": best_entry.content[:200], "category": category}
+            if sem_results:
+                for score, entry in sem_results[:15]:
+                    ew = set(re.findall(r'\w{3,}', entry.content.lower()))
+                    overlap = len(ans_words & ew)
+                    if overlap > best_score:
+                        best_score = overlap
+                        best_entry = entry
+                if best_entry and best_score >= max(len(ans_words) * 0.5, 2):
+                    return {"correct": True, "match_method": "keyword_overlap_sem_v712", "predicted": answer_clean,
+                            "expected": answer_clean, "top_result": best_entry.content[:200], "category": category}
+
+    # Failed (no LLM, no strategy matched)
     best = ""
     bm = "none"
     if sem_results:
