@@ -16,6 +16,7 @@
       neglected — 即将遗忘的记忆
       profile   — 用户画像
       stage     — 渐进式上下文注入
+      import    — 批量导入记忆
 """
 
 from __future__ import annotations
@@ -309,6 +310,73 @@ def _do_stage(p: dict) -> str:
 
 # ── 统一入口 ──────────────────────────────────────────────
 
+def _do_import(p: dict) -> str:
+    """批量导入记忆。接收 memories 列表，逐条写入。
+
+    params:
+      memories — 记忆列表，每项包含:
+        content(必填), title, scope_type, scope_id, tags, entities, related_to
+      dry_run — 如果为 True，只验证不写入
+    """
+    memories = p.get("memories", [])
+    if not memories:
+        return json.dumps({"status": "error", "message": "memories list is empty"}, ensure_ascii=False)
+
+    dry_run = p.get("dry_run", False)
+    store = _get_store()
+    now = datetime.now(timezone.utc)
+
+    results = {"total": len(memories), "imported": 0, "skipped": 0, "errors": []}
+
+    for i, mem in enumerate(memories):
+        try:
+            content = mem.get("content", "")
+            if not content.strip():
+                results["skipped"] += 1
+                continue
+
+            title = mem.get("title", "") or content[:80]
+            scope_type = mem.get("scope_type", "tenant")
+            scope_id = mem.get("scope_id", "")
+            tags = mem.get("tags", [])
+            entities_raw = mem.get("entities", [])
+            related_to = mem.get("related_to", [])
+
+            entity_refs = [
+                EntityRef(
+                    label=e.get("label", ""),
+                    entity_type=e.get("entity_type", "concept"),
+                    description=e.get("description", ""),
+                )
+                for e in entities_raw
+            ]
+
+            entry = MemoryEntry(
+                title=title,
+                content=content,
+                tier=MemoryTier.IMPRESSION,
+                scope=ScopeType(scope_type),
+                scope_id=scope_id,
+                tags=tags,
+                entities=entity_refs,
+                related_ids=related_to,
+                created_at=now,
+                last_accessed_at=now,
+            )
+
+            if dry_run:
+                results["imported"] += 1
+            else:
+                entry_id = store.inscribe(entry)
+                results["imported"] += 1
+
+        except Exception as e:
+            results["errors"].append({"index": i, "error": str(e)})
+
+    results["dry_run"] = dry_run
+    return json.dumps(results, ensure_ascii=False)
+
+
 _ACTIONS = {
     "remember": _do_remember,
     "recall": _do_recall,
@@ -320,6 +388,7 @@ _ACTIONS = {
     "neglected": _do_neglected,
     "profile": _do_profile,
     "stage": _do_stage,
+    "import": _do_import,
 }
 
 
@@ -338,6 +407,7 @@ def mnemos(action: str, params: str = "{}") -> str:
       neglected — 遗忘预警。params: min_decay, max_decay, limit
       profile   — 用户画像。params: scope_id
       stage     — 分层注入。params: query(必填), scope_type, scope_id, core_max, context_max
+      import    — 批量导入记忆。params: memories(必填, 记忆列表[{content,title,scope_type,scope_id,tags,entities,related_to}]), dry_run(选填,默认false)
 
     params — JSON 字符串，传递给对应 action 的参数。
 
@@ -346,6 +416,7 @@ def mnemos(action: str, params: str = "{}") -> str:
       mnemos(action="recall", params='{"query":"用户喜欢什么"}')
       mnemos(action="stats")
       mnemos(action="profile")
+      mnemos(action="import", params='{"memories":[{"content":"用户喜欢Python","title":"偏好","tags":["preference"]}]}')
     """
     handler = _ACTIONS.get(action)
     if not handler:

@@ -1,17 +1,16 @@
 __pycache__/
 *.pyc
-*.pyo
 .venv/
-venv/
-*.egg-info/
-dist/
-build/
-.coverage
-htmlcov/
-.pytest_cache/
+.env
 *.db
-results/
-.cache/
-mnemos/embeddings/
+*.db-journal
 *.db-wal
 *.db-shm
+patch_*.py
+benchmarks/longmemeval/longmemeval_s.json
+benchmarks/longmemeval/run_backup.py
+benchmarks/longmemeval/run_clean.py
+scripts/__pycache__/
+# Benchmark results
+benchmarks/longmemeval/results/
+results/

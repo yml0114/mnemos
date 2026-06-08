@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator
 
+import numpy as np
+
 from mnemos.core.models import (
     BeliefRecord,
     EntityRef,
@@ -138,6 +140,32 @@ CREATE TABLE IF NOT EXISTS entity_cooccur (
 );
 """
 
+_CREATE_ENTITY_EDGES = """
+CREATE TABLE IF NOT EXISTS entity_edges (
+    from_id     TEXT NOT NULL,
+    to_id       TEXT NOT NULL,
+    relation    TEXT NOT NULL DEFAULT 'related',
+    weight      REAL NOT NULL DEFAULT 1.0,
+    metadata    TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (from_id, to_id, relation)
+);
+"""
+
+_CREATE_EMBEDDINGS = """
+CREATE TABLE IF NOT EXISTS embeddings (
+    entry_id    TEXT PRIMARY KEY,
+    model       TEXT NOT NULL,
+    vector      BLOB NOT NULL,
+    dim         INTEGER NOT NULL,
+    dtype       TEXT NOT NULL DEFAULT 'float32',
+    created_at  TEXT NOT NULL,
+    FOREIGN KEY (entry_id) REFERENCES impressions(entry_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_emb_model ON embeddings(model);
+"""
+
 _CREATE_BELIEF_LOG = """
 CREATE TABLE IF NOT EXISTS belief_log (
     belief_id   TEXT PRIMARY KEY,
@@ -190,12 +218,16 @@ CREATE INDEX IF NOT EXISTS idx_pri_decay   ON principles(decay);
 CREATE INDEX IF NOT EXISTS idx_ent_mem     ON entity_index(memory_id);
 CREATE INDEX IF NOT EXISTS idx_ent_label   ON entity_index(label);
 CREATE INDEX IF NOT EXISTS idx_bel_mem     ON belief_log(memory_id);
+CREATE INDEX IF NOT EXISTS idx_edge_from   ON entity_edges(from_id);
+CREATE INDEX IF NOT EXISTS idx_edge_to     ON entity_edges(to_id);
+CREATE INDEX IF NOT EXISTS idx_edge_rel    ON entity_edges(relation);
 """
 
 ALL_SCHEMA = "\n".join([
     _CREATE_IMPRESSIONS, _CREATE_PATTERNS, _CREATE_PRINCIPLES,
-    _CREATE_ENTITY_INDEX, _CREATE_ENTITY_COOCCUR, _CREATE_BELIEF_LOG,
-    _CREATE_FTS, _FTS_TRIGGERS, _INDEXES,
+    _CREATE_ENTITY_INDEX, _CREATE_ENTITY_COOCCUR, _CREATE_ENTITY_EDGES,
+    _CREATE_BELIEF_LOG,
+    _CREATE_EMBEDDINGS, _CREATE_FTS, _FTS_TRIGGERS, _INDEXES,
 ])
 
 
@@ -562,8 +594,104 @@ class PalimpsestStore:
         self.db.commit()
         return total
 
+    # ── 嵌入向量持久化 ──────────────────────────────
+
+    @staticmethod
+    def _serialize_vector(vec: np.ndarray) -> bytes:
+        """numpy array → bytes (float32 little-endian)"""
+        return vec.astype(np.float32).tobytes()
+
+    @staticmethod
+    def _deserialize_vector(data: bytes, dim: int) -> np.ndarray:
+        """bytes → numpy array"""
+        return np.frombuffer(data, dtype=np.float32).reshape(-1) if dim else np.array([], dtype=np.float32)
+
+    def save_embedding(self, entry_id: str, model: str, vector: np.ndarray) -> None:
+        """将嵌入向量持久化到 SQLite"""
+        dim = int(vector.size)
+        blob = self._serialize_vector(vector)
+        now = _now()
+        self.db.execute(
+            "INSERT OR REPLACE INTO embeddings "
+            "(entry_id, model, vector, dim, dtype, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (entry_id, model, blob, dim, "float32", now),
+        )
+        self.db.commit()
+
+    def load_embedding(self, entry_id: str) -> np.ndarray | None:
+        """从持久化存储中加载单条嵌入向量"""
+        row = self.db.execute(
+            "SELECT vector, dim FROM embeddings WHERE entry_id=?",
+            (entry_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._deserialize_vector(row["vector"], row["dim"])
+
+    def load_embeddings_batch(self, entry_ids: list[str]) -> dict[str, np.ndarray]:
+        """批量加载嵌入向量，返回 {entry_id: vector}"""
+        if not entry_ids:
+            return {}
+        # SQLite 参数限制 999，分批查询
+        result: dict[str, np.ndarray] = {}
+        batch_size = 500
+        for i in range(0, len(entry_ids), batch_size):
+            chunk = entry_ids[i : i + batch_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.db.execute(
+                f"SELECT entry_id, vector, dim FROM embeddings "
+                f"WHERE entry_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                result[row["entry_id"]] = self._deserialize_vector(
+                    row["vector"], row["dim"]
+                )
+        return result
+
+    def delete_embedding(self, entry_id: str) -> None:
+        """删除一条嵌入向量"""
+        self.db.execute(
+            "DELETE FROM embeddings WHERE entry_id=?", (entry_id,)
+        )
+        self.db.commit()
+
+    def delete_embeddings_batch(self, entry_ids: list[str]) -> None:
+        """批量删除嵌入向量"""
+        if not entry_ids:
+            return
+        batch_size = 500
+        for i in range(0, len(entry_ids), batch_size):
+            chunk = entry_ids[i : i + batch_size]
+            placeholders = ",".join("?" * len(chunk))
+            self.db.execute(
+                f"DELETE FROM embeddings WHERE entry_id IN ({placeholders})",
+                chunk,
+            )
+        self.db.commit()
+
+    def embedding_stats(self) -> dict[str, Any]:
+        """返回嵌入向量统计信息"""
+        row = self.db.execute(
+            "SELECT COUNT(*) as count, model, AVG(dim) as avg_dim "
+            "FROM embeddings GROUP BY model"
+        ).fetchall()
+        if not row:
+            return {"count": 0, "models": []}
+        return {
+            "count": sum(r["count"] for r in row),
+            "models": [
+                {"model": r["model"], "count": r["count"], "avg_dim": r["avg_dim"]}
+                for r in row
+            ],
+        }
+
     def count(self) -> dict[str, int]:
         """返回各层计数"""
+        emb_row = self.db.execute(
+            "SELECT COUNT(*) FROM embeddings"
+        ).fetchone()
         return {
             "impressions": self.db.execute(
                 "SELECT COUNT(*) FROM impressions"
@@ -583,6 +711,7 @@ class PalimpsestStore:
             "beliefs": self.db.execute(
                 "SELECT COUNT(*) FROM belief_log"
             ).fetchone()[0],
+            "embeddings": emb_row[0] if emb_row else 0,
         }
 
     def all(self, limit: int = 1000) -> list[MemoryEntry]:
@@ -651,6 +780,74 @@ class PalimpsestStore:
             "UPDATE impressions SET is_active=0, event_end=?, touched_at=? WHERE entry_id=?",
             (now, now, entry_id),
         )
+
+    # ── 实体关系边操作 ──────────────────────────────────────
+
+    def link_entities_together(
+        self,
+        entity_a_id: str,
+        entity_b_id: str,
+        relation: str = "related",
+        weight: float = 1.0,
+        metadata_json: str = "{}",
+    ) -> None:
+        """创建或增强两个实体之间的显式关系边"""
+        a, b = sorted([entity_a_id, entity_b_id])
+        now = _now()
+        self.db.execute(
+            """INSERT INTO entity_edges
+               (from_id, to_id, relation, weight, metadata, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(from_id, to_id, relation) DO UPDATE SET
+               weight = weight + excluded.weight,
+               updated_at = excluded.updated_at,
+               metadata = CASE
+                   WHEN excluded.metadata != '{}' THEN excluded.metadata
+                   ELSE entity_edges.metadata
+               END""",
+            (a, b, relation, weight, metadata_json, now, now),
+        )
+        self.db.commit()
+
+    def get_entity_edges(self, entity_id: str) -> list[dict[str, Any]]:
+        """获取与某个实体相连的所有显式关系边"""
+        rows = self.db.execute(
+            """SELECT from_id, to_id, relation, weight, metadata,
+                      created_at, updated_at
+               FROM entity_edges
+               WHERE from_id=? OR to_id=?
+               ORDER BY weight DESC""",
+            (entity_id, entity_id),
+        ).fetchall()
+        return [
+            {
+                "source": r["from_id"],
+                "target": r["to_id"],
+                "relation": r["relation"],
+                "weight": r["weight"],
+                "metadata": json.loads(r["metadata"]) if r["metadata"] else {},
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            }
+            for r in rows
+        ]
+
+    def update_edge_weight(
+        self,
+        from_id: str,
+        to_id: str,
+        delta: float,
+    ) -> None:
+        """增减边权重（正数增强，负数削弱，不低于0）"""
+        a, b = sorted([from_id, to_id])
+        now = _now()
+        self.db.execute(
+            """UPDATE entity_edges
+               SET weight = MAX(0.0, weight + ?), updated_at = ?
+               WHERE from_id=? AND to_id=?""",
+            (delta, now, a, b),
+        )
+        self.db.commit()
 
 
 # ── 序列化辅助 ───────────────────────────────────────────
@@ -729,9 +926,18 @@ def _deserialize(row: dict, tier: MemoryTier) -> MemoryEntry:
 
     created = datetime.fromisoformat(row["created_at"])
     touched = datetime.fromisoformat(row.get("touched_at", row["created_at"]))
+    # 统一补 UTC 时区 — 避免 naive vs aware 比较
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    if touched.tzinfo is None:
+        touched = touched.replace(tzinfo=timezone.utc)
 
-    # 时序字段
-    memory_type = MemoryType(row.get("memory_type", "timeless"))
+    # memory_type 防御：旧数据可能有 "self" 等非法值，fallback 到 timeless
+    raw_mt = row.get("memory_type", "timeless")
+    try:
+        memory_type = MemoryType(raw_mt)
+    except ValueError:
+        memory_type = MemoryType.TIMELESS
     event_start = None
     event_end = None
     if row.get("event_start"):
@@ -747,7 +953,7 @@ def _deserialize(row: dict, tier: MemoryTier) -> MemoryEntry:
         scope=ScopeType(row.get("scope_type", "tenant")),
         scope_id=row.get("scope_id", ""),
         tags=_from_json(row.get("tags_json", "[]")),
-        entities=[EntityRef(**e) for e in _from_json(row.get("entities_json", "[]"))],
+        entities=[EntityRef(**e) if isinstance(e, dict) else EntityRef(label=str(e)) for e in _from_json(row.get("entities_json", "[]"))],
         beliefs=[BeliefRecord(**b) for b in _from_json(row.get("beliefs_json", "[]"))],
         related_ids=_from_json(row.get("related_json", row.get("source_json", "[]"))),
         parent_id=row.get("parent_id"),

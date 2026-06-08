@@ -77,7 +77,15 @@ class Mneme:
                 continue
 
             content = mem.content
-            is_recent = mem.created_at and mem.created_at >= recent_threshold
+            # 兼容 offset-naive 和 aware 的比较
+            if mem.created_at:
+                if mem.created_at.tzinfo is None:
+                    mem_created = mem.created_at.replace(tzinfo=timezone.utc)
+                else:
+                    mem_created = mem.created_at
+                is_recent = mem_created >= recent_threshold
+            else:
+                is_recent = False
 
             # 分类
             for pattern, category in PREFERENCE_CATEGORIES.items():

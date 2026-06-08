@@ -29,6 +29,8 @@ from mnemos.core.models import (
     SearchResult,
     ScopeType,
 )
+from mnemos.embedding import get_hermes
+from mnemos.embedding.cache import EmbeddingCache
 from mnemos.retrieval.bm25 import BM25Scorer
 from mnemos.storage.palimpsest import PalimpsestStore
 
@@ -106,37 +108,27 @@ class ResonanceEngine:
         self._store = store
         self._bm25: BM25Scorer | None = None
         self._bm25_indexed = False
-        self._embed_cache: dict[str, np.ndarray] = {}  # entry_id → 向量缓存
         self._cache_version: int = 0  # 缓存版本号，记忆变更时递增
 
+    def _init_cache(self) -> EmbeddingCache:
+        """延迟初始化嵌入缓存（首次查询时构建）"""
+        if not hasattr(self, "_embedding_cache"):
+            hermes = get_hermes()
+            self._embedding_cache = EmbeddingCache(self._store, hermes)
+        return self._embedding_cache
+
     def _get_entry_vectors(self, hermes, entries: list) -> np.ndarray:
-        """批量获取记忆嵌入向量，带缓存"""
+        """批量获取记忆嵌入向量，通过 EmbeddingCache 持久化"""
+        cache = self._init_cache()
+        cached = cache.get_or_compute(entries)
         vecs = []
-        new_entries = []
-        new_indices = []
-
-        for i, entry in enumerate(entries):
-            eid = entry.entry_id if hasattr(entry, 'entry_id') else str(id(entry))
-            if eid in self._embed_cache:
-                vecs.append(self._embed_cache[eid])
-            else:
-                vecs.append(None)
-                new_entries.append(entry)
-                new_indices.append(i)
-
-        # 批量编码新条目
-        if new_entries:
-            contents = [e.content for e in new_entries]
-            # 批量 embed 比逐条快 5-10 倍
-            new_vecs = hermes.embed(contents)  # 返回 (N, dim)
-            if len(new_vecs.shape) == 1:
-                new_vecs = new_vecs[np.newaxis, :]
-
-            for j, entry in enumerate(new_entries):
-                eid = entry.entry_id if hasattr(entry, 'entry_id') else str(id(entry))
-                self._embed_cache[eid] = new_vecs[j]
-                vecs[new_indices[j]] = new_vecs[j]
-
+        for entry in entries:
+            eid = entry.entry_id if hasattr(entry, "entry_id") else str(id(entry))
+            vec = cached.get(eid)
+            if vec is None:
+                # 不应该到这里，但安全降级
+                vec = np.zeros(hermes.dim, dtype=np.float32)
+            vecs.append(vec)
         return np.array(vecs)
 
     def search(self, query: MemoryQuery) -> list[SearchResult]:
@@ -157,15 +149,14 @@ class ResonanceEngine:
 
         # 语义信号：优先使用本地嵌入（Hermes），降级为 FTS5
         if query.query_text:
-            from mnemos.embedding import get_hermes
             hermes = get_hermes()
 
             if hermes.ready:
-                # 真实语义向量检索（带缓存）
+                # 真实语义向量检索（带持久化缓存）
                 query_vec = hermes.embed(query.query_text)
                 all_entries = self._store.all(limit=500)
                 if all_entries:
-                    # 使用缓存的嵌入向量，避免每次查询重新编码
+                    # 使用持久化缓存的嵌入向量，避免每次查询重新编码
                     entry_vecs = self._get_entry_vectors(hermes, all_entries)
                     scores = hermes.batch_similarity(query_vec, entry_vecs)
                     for i, entry in enumerate(all_entries):

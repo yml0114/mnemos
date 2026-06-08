@@ -3,6 +3,86 @@ import sys, os, json, time, argparse, re, math
 from pathlib import Path
 from collections import defaultdict
 
+# ── LLM Reasoning Fallback (v8.0) ──
+try:
+    import httpx
+    HAS_HTTPX = True
+except ImportError:
+    HAS_HTTPX = False
+
+class LLMReasoner:
+    """LLM-based reasoning fallback for when heuristic matchers fail.
+    Supports any OpenAI-compatible API (OpenAI, Ollama, vLLM, etc.)
+    Only activated when --llm flag is passed.
+    """
+    def __init__(self, model="gpt-4o", base_url="", api_key=""):
+        self.model = model
+        self.base_url = base_url or os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", os.environ.get("LLM_API_KEY", ""))
+        self.calls = 0
+        self.cache = {}
+
+    def reason(self, question, candidates, category=""):
+        """Ask LLM to answer based on retrieved memory candidates."""
+        cache_key = (question, tuple(c[:80] for c, _ in candidates))
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        if not HAS_HTTPX:
+            return ""
+        if not self.api_key and "localhost" not in self.base_url and "127.0.0.1" not in self.base_url:
+            return ""
+
+        context_parts = []
+        for i, (content, source) in enumerate(candidates[:15], 1):
+            context_parts.append("[Memory {}]: {}".format(i, content[:300]))
+        context = "\n".join(context_parts)
+
+        prompt = REASON_PROMPT.format(category=category, context=context, question=question)
+
+        try:
+            url = self.base_url.rstrip("/") + "/chat/completions"
+            headers = {"Content-Type": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = "Bearer {}".format(self.api_key)
+            body = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": REASON_SYSTEM},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+                "max_tokens": 300,
+            }
+            resp = httpx.post(url, headers=headers, json=body, timeout=30)
+            resp.raise_for_status()
+            answer = resp.json()["choices"][0]["message"]["content"].strip()
+            self.calls += 1
+            self.cache[cache_key] = answer
+            return answer
+        except Exception as e:
+            print("    ⚠️ LLM fallback error: {}".format(str(e)[:80]))
+            return ""
+
+REASON_SYSTEM = """You are a precise memory retrieval assistant. Your job is to answer questions based ONLY on the provided memory entries.
+
+Rules:
+- Answer concisely — just the fact, no explanation
+- If the answer is a number, just give the number (with $ prefix for dollar amounts)
+- If the answer is a name, just give the name
+- If the answer is a preference, state it as "The user would prefer..."
+- If you cannot find the answer in the memories, respond with exactly: NOT_FOUND
+- Do NOT hallucinate or infer information not present in the memories"""
+
+REASON_PROMPT = """Category: {category}
+
+Memories:
+{context}
+
+Question: {question}
+
+Answer (concise, based ONLY on the memories above):"""
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 CATEGORIES = {
@@ -627,7 +707,7 @@ def _direct_answer_search(entries, answer):
 
 # ── Main answer function ──
 def answer_question(qstore, question, answer, category, question_id="", fast_mode=False,
-                    scope_id="", hermes=None):
+                    scope_id="", hermes=None, llm_reasoner=None):
     answer_clean = str(answer).strip()
     all_entries = qstore.all(limit=500)
     if not all_entries:
@@ -1272,7 +1352,47 @@ def answer_question(qstore, question, answer, category, question_id="", fast_mod
                     return {"correct": True, "match_method": "keyword_overlap_all", "predicted": answer_clean,
                             "expected": answer_clean, "top_result": entry.content[:200], "category": category}
 
-    # Failed
+    # ── LLM Reasoning Fallback (v8.0) ──
+    # When all heuristic matchers fail, ask LLM to reason over retrieved candidates
+    if llm_reasoner is not None:
+        # Gather best candidates for LLM context
+        llm_candidates = []
+        seen_contents = set()
+        # Prefer sem_results (already ranked by relevance)
+        if sem_results:
+            for score, entry in sem_results[:10]:
+                c = entry.content[:300]
+                if c not in seen_contents:
+                    seen_contents.add(c)
+                    llm_candidates.append((c, "sem:{:.2f}".format(score)))
+        # Add FTS5 results
+        if ranked_entries:
+            for entry in ranked_entries[:10]:
+                c = entry.content[:300]
+                if c not in seen_contents:
+                    seen_contents.add(c)
+                    llm_candidates.append((c, "fts"))
+        # Add top all_entries
+        if len(llm_candidates) < 5:
+            for entry in all_entries[:20]:
+                c = entry.content[:300]
+                if c not in seen_contents:
+                    seen_contents.add(c)
+                    llm_candidates.append((c, "all"))
+        
+        if llm_candidates:
+            llm_answer = llm_reasoner.reason(question, llm_candidates, category)
+            if llm_answer and llm_answer != "NOT_FOUND":
+                if _answers_match(llm_answer, answer_clean):
+                    return {"correct": True, "match_method": "llm_reason",
+                            "predicted": llm_answer, "expected": answer_clean,
+                            "top_result": llm_candidates[0][0][:200], "category": category}
+                # LLM gave an answer but it didn't match — still record it
+                return {"correct": False, "match_method": "llm_reason_miss",
+                        "predicted": llm_answer, "expected": answer_clean,
+                        "top_result": llm_candidates[0][0][:200], "category": category}
+
+    # Failed (no LLM or LLM also failed)
     best = ""
     bm = "none"
     if sem_results:
@@ -1358,7 +1478,7 @@ def load_local(path, subset=0):
     return instances
 
 # ── Benchmark runner ──
-def run_benchmark(instances, hermes=None, PalimpsestStore=None, fast_mode=False):
+def run_benchmark(instances, hermes=None, PalimpsestStore=None, fast_mode=False, llm_reasoner=None):
     results = []
     by_cat = defaultdict(list)
     for i, inst in enumerate(instances):
@@ -1373,7 +1493,7 @@ def run_benchmark(instances, hermes=None, PalimpsestStore=None, fast_mode=False)
 
         result = answer_question(qstore, question, answer, category,
                                  question_id=qid, scope_id="lmme_{}".format(qid),
-                                 hermes=hermes, fast_mode=fast_mode)
+                                 hermes=hermes, fast_mode=fast_mode, llm_reasoner=llm_reasoner)
         by_cat[category].append(result)
         results.append(result)
 
@@ -1384,13 +1504,16 @@ def run_benchmark(instances, hermes=None, PalimpsestStore=None, fast_mode=False)
     return by_cat, results
 
 def main():
-    parser = argparse.ArgumentParser(description="Mnemos LongMemEval v7.8")
+    parser = argparse.ArgumentParser(description="Mnemos LongMemEval v8.0")
     parser.add_argument("--local", help="Local JSON file")
     parser.add_argument("--subset", type=int, default=0)
     parser.add_argument("--fast", action="store_true", help="Skip semantic rerank for 2x speed")
+    parser.add_argument("--llm", default="", help="LLM model for reasoning fallback (e.g. gpt-4o, gpt-4.1-mini)")
+    parser.add_argument("--llm-base", default="", help="LLM API base URL (default: OpenAI)")
+    parser.add_argument("--llm-key", default="", help="LLM API key (or set OPENAI_API_KEY env)")
     args = parser.parse_args()
 
-    print("🔬 Mnemos LongMemEval Benchmark v7.8")
+    print("🔬 Mnemos LongMemEval Benchmark v8.0")
     print("目标: 🏆 超越 OMEGA (95.4%)")
     print("策略: FTS5-first + Lazy Semantic + Smart Extractors + Implicit Preferences")
     if hasattr(args, "fast") and args.fast:
@@ -1428,9 +1551,17 @@ def main():
     for cat, n in sorted(by_cat.items()):
         print("  {}: {}".format(CATEGORIES.get(cat, cat), n))
 
+    # Initialize LLM reasoner if requested
+    llm_reasoner = None
+    if args.llm:
+        llm_reasoner = LLMReasoner(model=args.llm, base_url=args.llm_base, api_key=args.llm_key)
+        print("🧠 LLM 推理层: {} (base: {})".format(args.llm, llm_reasoner.base_url))
+    else:
+        print("⚡ 零LLM模式 (纯规则匹配)")
+
     print("\n🚀 运行评测...")
     t0 = time.time()
-    by_cat_results, all_results = run_benchmark(instances, hermes, PalimpsestStore, fast_mode=args.fast)
+    by_cat_results, all_results = run_benchmark(instances, hermes, PalimpsestStore, fast_mode=args.fast, llm_reasoner=llm_reasoner)
     elapsed = time.time() - t0
 
     total_c = sum(sum(1 for r in items if r["correct"]) for items in by_cat_results.values())
@@ -1439,6 +1570,10 @@ def main():
     if total_n == 0:
         print("❌ 没有评测结果！")
         return
+
+    # Print LLM stats
+    if llm_reasoner and llm_reasoner.calls > 0:
+        print("🧠 LLM 推理调用: {} 次".format(llm_reasoner.calls))
 
     print("\n" + "="*60)
     print("📊 Mnemos LongMemEval v7.8 结果")
