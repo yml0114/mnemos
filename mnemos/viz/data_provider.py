@@ -1,13 +1,9 @@
 """
 可视化数据提供层
 
-将 PalimpsestStore 的原始数据转换为前端可视化所需的结构：
-- 记忆星系（3D 粒子布局）
-- 信念演化链
-- 实体关系图
-- 统计概览
+将 PalimpsestStore 的原始数据转换为前端可视化所需的结构。
+修复：entities_json 是纯字符串列表，不是 dict 列表。
 """
-
 from __future__ import annotations
 
 import json
@@ -23,23 +19,29 @@ class DashboardProvider:
     def __init__(self, store: PalimpsestStore):
         self._store = store
 
+    def _connect(self):
+        self._store.connect()
+
+    @staticmethod
+    def _parse_entities(raw) -> list[str]:
+        """entities_json 可能是 ['A','B'] 或 ['{"label":"A"}'] 格式"""
+        if not raw:
+            return []
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        result = []
+        for e in data:
+            if isinstance(e, dict):
+                result.append(e.get("label", ""))
+            elif isinstance(e, str):
+                result.append(e)
+        return [x for x in result if x]
+
     # ── 记忆星系 ──────────────────────────────────────
 
     def galaxy(self, limit: int = 200) -> dict[str, Any]:
-        """
-        构建记忆星系数据。
-
-        每条记忆是一个星体：
-        - 印象 = 闪烁粒子
-        - 模式 = 光环行星
-        - 原则 = 恒星
-
-        实体共现关系形成引力连线。
-        """
+        self._connect()
         store = self._store
-        store.connect()
 
-        # 收集所有印象
         rows = store.db.execute(
             "SELECT entry_id, title, tier, scope_type, "
             "entities_json, tags_json, created_at, touched_at, decay, hits "
@@ -59,23 +61,21 @@ class DashboardProvider:
             (limit,),
         ).fetchall()
 
-        # 构建节点
         nodes: list[dict] = []
         for r in rows:
-            entities = json.loads(r["entities_json"]) if r["entities_json"] else []
+            entities = self._parse_entities(r["entities_json"])
             tags = json.loads(r["tags_json"]) if r["tags_json"] else []
             nodes.append({
                 "id": r["entry_id"],
                 "label": r["title"] or r["entry_id"][:8],
                 "tier": r["tier"],
                 "scope": r["scope_type"],
-                "entities": [e.get("label", "") for e in entities],
+                "entities": entities,
                 "tags": tags,
                 "created_at": r["created_at"],
                 "touched_at": r["touched_at"],
                 "decay": r["decay"],
                 "hits": r["hits"],
-                # 3D 位置由前端分配，这里只给权重参数
                 "mass": 1.0 + len(entities) * 0.3 + len(tags) * 0.2,
                 "brightness": r["decay"],
             })
@@ -86,9 +86,7 @@ class DashboardProvider:
             entity_map: dict[str, list[str]] = {}
             for n in nodes:
                 for ent in n["entities"]:
-                    if ent not in entity_map:
-                        entity_map[ent] = []
-                    entity_map[ent].append(n["id"])
+                    entity_map.setdefault(ent, []).append(n["id"])
 
             linked_pairs: set[tuple[str, str]] = set()
             for mem_ids in entity_map.values():
@@ -99,53 +97,33 @@ class DashboardProvider:
                             linked_pairs.add((a, b))
                             links.append({"source": a, "target": b, "type": "entity"})
 
-        # 时间聚类
         timeline = self._build_timeline_clusters(nodes)
-
-        return {
-            "nodes": nodes,
-            "links": links,
-            "timeline": timeline,
-            "total": len(nodes),
-        }
+        return {"nodes": nodes, "links": links, "timeline": timeline, "total": len(nodes)}
 
     def _build_timeline_clusters(self, nodes: list[dict]) -> list[dict]:
-        """按时间将记忆分组聚类"""
         if not nodes:
             return []
         clusters: dict[str, list[dict]] = {}
         for n in nodes:
             try:
-                dt = datetime.fromisoformat(n["created_at"])
-                key = dt.strftime("%Y-%m-%d")
+                key = datetime.fromisoformat(n["created_at"]).strftime("%Y-%m-%d")
             except (ValueError, KeyError):
                 key = "unknown"
             clusters.setdefault(key, []).append(n)
-
         return [
-            {
-                "date": k,
-                "count": len(v),
-                "tiers": {
-                    "impression": sum(1 for x in v if x["tier"] == "impression"),
-                    "pattern": sum(1 for x in v if x["tier"] == "pattern"),
-                    "principle": sum(1 for x in v if x["tier"] == "principle"),
-                },
-            }
+            {"date": k, "count": len(v), "tiers": {
+                "impression": sum(1 for x in v if x["tier"] == "impression"),
+                "pattern": sum(1 for x in v if x["tier"] == "pattern"),
+                "principle": sum(1 for x in v if x["tier"] == "principle"),
+            }}
             for k, v in sorted(clusters.items())
         ]
 
     # ── 信念演化树 ────────────────────────────────────
 
     def belief_tree(self, memory_id: str | None = None) -> dict[str, Any]:
-        """
-        构建信念演化树。
-
-        每条信念链展示：
-        旧信念 → 被推翻 → 新信念 → 强化 → 更确信
-        """
+        self._connect()
         store = self._store
-        store.connect()
 
         if memory_id:
             rows = store.db.execute(
@@ -157,7 +135,6 @@ class DashboardProvider:
                 "SELECT * FROM belief_log ORDER BY adopted_at DESC LIMIT 100"
             ).fetchall()
 
-        # 按 memory_id 分组
         chains: dict[str, list[dict]] = {}
         for r in rows:
             mid = r["memory_id"]
@@ -172,7 +149,6 @@ class DashboardProvider:
                 "is_active": r["superseded"] is None,
             })
 
-        # 构建树结构
         trees = []
         for mid, chain in chains.items():
             memory = store.by_id(mid)
@@ -187,106 +163,95 @@ class DashboardProvider:
                 ),
             })
 
-        return {
-            "trees": trees,
-            "total_beliefs": len(rows),
-            "total_revisions": sum(t["revisions"] for t in trees),
-        }
+        return {"trees": trees, "total_beliefs": len(rows),
+                "total_revisions": sum(t["revisions"] for t in trees)}
 
     # ── 实体关系图谱 ──────────────────────────────────
 
     def entity_graph(self, center_label: str | None = None, limit: int = 50) -> dict[str, Any]:
-        """
-        构建实体关系图谱。
-
-        节点 = 实体
-        边 = 共现关系（权重 = 共现次数）
-        """
+        self._connect()
         store = self._store
-        store.connect()
 
         if center_label:
-            graph = store.entity_graph(center_label, limit)
-            return {
-                "center": center_label,
-                "nodes": graph["nodes"],
-                "edges": graph["edges"],
-                "total_nodes": len(graph["nodes"]),
-                "total_edges": len(graph["edges"]),
-            }
+            # 用 entity_edges（有数据）而非 entity_cooccur
+            edges = store.db.execute(
+                "SELECT from_id as source, to_id as target, weight "
+                "FROM entity_edges WHERE from_id=? OR to_id=? ORDER BY weight DESC LIMIT ?",
+                (center_label, center_label, limit),
+            ).fetchall()
 
-        # 全局图谱：取共现权重最高的
+            node_set = {center_label}
+            edge_list = []
+            for e in edges:
+                node_set.add(e["source"])
+                node_set.add(e["target"])
+                edge_list.append({"source": e["source"], "target": e["target"], "weight": e["weight"]})
+
+            # 获取实体元信息
+            placeholders = ",".join("?" for _ in node_set)
+            meta_rows = store.db.execute(
+                f"SELECT label, etype, COUNT(*) as mem_count "
+                f"FROM entity_index WHERE label IN ({placeholders}) GROUP BY label",
+                list(node_set),
+            ).fetchall()
+            meta = {r["label"]: {"type": r["etype"], "memory_count": r["mem_count"]} for r in meta_rows}
+
+            nodes = [{"id": l, "label": l, "type": meta.get(l, {}).get("type", "concept"),
+                       "memory_count": meta.get(l, {}).get("memory_count", 0)}
+                      for l in node_set]
+            return {"center": center_label, "nodes": nodes, "edges": edge_list,
+                    "total_nodes": len(nodes), "total_edges": len(edge_list)}
+
+        # 全局图谱：用 entity_edges
         rows = store.db.execute(
-            "SELECT a, b, weight, last_seen FROM entity_cooccur "
-            "ORDER BY weight DESC LIMIT ?",
-            (limit * 2,),
+            "SELECT from_id, to_id, weight FROM entity_edges "
+            "ORDER BY weight DESC LIMIT ?", (limit * 2,)
         ).fetchall()
 
         nodes_set: set[str] = set()
         edges: list[dict] = []
         for r in rows:
-            nodes_set.add(r["a"])
-            nodes_set.add(r["b"])
-            edges.append({
-                "source": r["a"],
-                "target": r["b"],
-                "weight": r["weight"],
-                "last_seen": r["last_seen"],
-            })
+            nodes_set.add(r["from_id"])
+            nodes_set.add(r["to_id"])
+            edges.append({"source": r["from_id"], "target": r["to_id"], "weight": r["weight"]})
 
         # 获取实体元信息
         entity_labels = list(nodes_set)[:limit]
-        placeholders = ",".join("?" for _ in entity_labels)
-        meta_rows = store.db.execute(
-            f"SELECT DISTINCT label, etype, COUNT(*) as mem_count "
-            f"FROM entity_index WHERE label IN ({placeholders}) "
-            f"GROUP BY label",
-            entity_labels,
-        ).fetchall()
+        if entity_labels:
+            placeholders = ",".join("?" for _ in entity_labels)
+            meta_rows = store.db.execute(
+                f"SELECT DISTINCT label, etype, COUNT(*) as mem_count "
+                f"FROM entity_index WHERE label IN ({placeholders}) GROUP BY label",
+                entity_labels,
+            ).fetchall()
+            entity_meta = {r["label"]: {"type": r["etype"], "memory_count": r["mem_count"]}
+                           for r in meta_rows}
+        else:
+            entity_meta = {}
 
-        entity_meta = {
-            r["label"]: {"type": r["etype"], "memory_count": r["mem_count"]}
-            for r in meta_rows
-        }
+        nodes = [{"id": l, "label": l, "type": entity_meta.get(l, {}).get("type", "concept"),
+                   "memory_count": entity_meta.get(l, {}).get("memory_count", 0)}
+                  for l in nodes_set]
 
-        nodes = [
-            {
-                "id": label,
-                "label": label,
-                "type": entity_meta.get(label, {}).get("type", "concept"),
-                "memory_count": entity_meta.get(label, {}).get("memory_count", 0),
-            }
-            for label in nodes_set
-        ]
-
-        return {
-            "nodes": nodes,
-            "edges": edges,
-            "total_nodes": len(nodes),
-            "total_edges": len(edges),
-        }
+        return {"nodes": nodes, "edges": edges, "total_nodes": len(nodes), "total_edges": len(edges)}
 
     # ── 统计概览 ──────────────────────────────────────
 
     def overview(self) -> dict[str, Any]:
-        """记忆世界统计仪表盘"""
+        self._connect()
         store = self._store
-        store.connect()
         counts = store.count()
 
-        # 时间分布
         time_rows = store.db.execute(
             "SELECT substr(created_at,1,10) as day, COUNT(*) as cnt "
             "FROM impressions GROUP BY day ORDER BY day DESC LIMIT 30"
         ).fetchall()
 
-        # 实体分布
         top_entities = store.db.execute(
             "SELECT label, etype, COUNT(*) as cnt FROM entity_index "
             "GROUP BY label ORDER BY cnt DESC LIMIT 20"
         ).fetchall()
 
-        # 衰减分布
         decay_rows = store.db.execute(
             "SELECT "
             "  SUM(CASE WHEN decay >= 0.8 THEN 1 ELSE 0 END) as fresh, "
@@ -299,10 +264,8 @@ class DashboardProvider:
         return {
             "counts": counts,
             "timeline": [{"date": r["day"], "count": r["cnt"]} for r in reversed(time_rows)],
-            "top_entities": [
-                {"label": r["label"], "type": r["etype"], "count": r["cnt"]}
-                for r in top_entities
-            ],
+            "top_entities": [{"label": r["label"], "type": r["etype"], "count": r["cnt"]}
+                             for r in top_entities],
             "decay_distribution": dict(decay_rows) if decay_rows else {},
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
