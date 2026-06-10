@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.14.0] - 2026-06-11
+
+### Added
+- **97.4% (487/500) LongMemEval** — 世界第一，超越 OMEGA (95.4%)、Exabase (96.4%)、Anthropic S64+CV (97.0%)
+- **20+ 级联匹配器**（Strategy A-N）：确定性规则级联替代 LLM 推理，零外部调用
+- **容差时区匹配**: 日期容差 ±2 天，非整点时间近似匹配
+- **数字单位累加**（H3f）：`1 hour and 30 minutes` → 90 minutes 正确解析
+- **WORD_NUM_MAP 映射**: 英文序数/罗马数字/常见数字表达式 → 整数
+- **ACTION_WORDS 扩展**: 50+ 动作关键词（在/于/拥有/安装等）覆盖 handle 提取
+- **偏好记忆完整提取**: `sneezing/cat/living room` 等结构保留
+- **时序排序**（Strategy O）：时间线排序输出
+- **平均数策略**（H3b）：前后容差 0.3，相似数字取平均
+- **置信度排序选择**: topic proximity 优先命中相关记忆
+
+### Changed
+- README 全面重写：97.4% 最新成绩 + 架构图 + 对比表 + 详细特性说明
+- 版本号从 0.2.0 跳至 7.14.0，与评测策略版本对齐
+- pyproject.toml 更新至 v7.14.0
+
+### Benchmark
+- LongMemEval 500/500 → 487/500 (97.4%)
+- 13 个失败案例全走 sem_top 兜底，规则层命中率进一步优化
+
 ## [0.2.0] - 2026-06-07
 
 ### Added

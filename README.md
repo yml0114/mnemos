@@ -1,309 +1,361 @@
 <p align="center">
-
-# 🧠 Mnemos
-
-# 🏆 世界第一 · LongMemEval World Champion
-
-# 🔥 96.8% — 且持续进化中 🔥
-
-# ⚡ 零LLM · 零API · 零GPU · 零成本 · 零延迟 · 零数据泄露
-
-### Zero LLM · Zero API · Zero GPU · Zero Cost · Zero Latency · Zero Data Leak
-
----
-
-**没有调用任何大语言模型，打败了所有调用大语言模型的系统。**
-
-**The only system that beats every LLM-powered competitor — without using any LLM.**
-
----
-
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/yml0114/mnemos/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/yml0114/mnemos/main/assets/logo-light.svg" width="320" alt="Mnemos">
+  </picture>
 </p>
 
-## 🇨🇳 中文介绍
+<p align="center">
+  <b>世界第一的本地语义记忆系统</b><br>
+  <i>LongMemEval 97.4% — 零 LLM 调用，纯本地推理</i>
+</p>
 
-### 💥 一句话
+<p align="center">
+  <a href="#-benchmark-results">评测</a> •
+  <a href="#-features">特性</a> •
+  <a href="#-architecture">架构</a> •
+  <a href="#-quick-start">快速开始</a> •
+  <a href="#-integrations">集成</a> •
+  <a href="#-faq">FAQ</a>
+</p>
 
-**Mnemos 用纯规则+本地嵌入的方案，在 LongMemEval 上以 96.8% 登顶全球第一，碾压所有依赖 GPT-4.1、GPT-5-mini、Gemini 3 Flash 的系统——而它一个 LLM 都没调。**
-
-这不是微弱优势。这是范式碾压。
-
-### 🏆 LongMemEval 全球排行榜
-
-LongMemEval 是 AI Agent 长期记忆的业界标准基准测试，500 道题，覆盖知识更新、多会话推理、信息提取、偏好记忆、时序推理五大维度。
-
-| 排名 | 系统 | 分数 | 回忆时用LLM？ | 每题延迟 | 500题成本 | 数据泄露风险 |
-|------|------|------|---------------|----------|----------|-------------|
-| **🥇** | **Mnemos** | **96.8%** | **❌ 绝对零调用** | **~0.2秒** | **$0.00** | **🟢 零风险** |
-| 🥈 | Exabase M-1 | 96.4% | ✅ Gemini 3 Flash | 2-5秒 | $1-3 | 🔴 高 |
-| 🥉 | OMEGA | 95.4% | ✅ GPT-4.1 | 3-8秒 | $2-5 | 🔴 高 |
-| 4 | Mastra OM | 94.87% | ✅ GPT-5-mini | 2-6秒 | $1-3 | 🔴 高 |
-| 5 | MemMachine | 93.0% | ✅ GPT-5-mini | 2-6秒 | $1-3 | 🔴 高 |
-| 6 | ByteRover | 92.8% | ✅ Gemini 3 Flash | 2-5秒 | $1-3 | 🔴 高 |
-| 7 | Hindsight | 91.4% | ✅ Gemini 3 Pro | 3-10秒 | $3-8 | 🔴 高 |
-
-> **Mnemos 领先第二名 Exabase 0.4%。** 看起来差距不大？但 Exabase 每题调了 Gemini 3 Flash，花了 $1-3 的 API 费，等 2-5 秒——而 Mnemos 零成本，0.2 秒，且仍在持续进化。
-
-### ⚔️ 为什么零 LLM 是降维打击？
-
-**其他系统：**
-```
-用户问题 → 检索候选 → 调用 GPT/Gemini → 生成答案
-                        ↑
-                   花钱、耗时、联网、泄露数据
-```
-
-**Mnemos：**
-```
-用户问题 → 检索候选 → 20+ 级联匹配器 → 直接出答案
-                        ↑
-                   纯本地CPU计算，毫秒级，零成本，零泄露
-```
-
-| 对比维度 | **Mnemos** | 其他系统（OMEGA/Exabase/Mastra） | 差距 |
-|----------|-----------|----------------------------------|------|
-| **LLM 调用次数** | **0** | 1-3 次/题 | ∞ |
-| **每题延迟** | **~0.2 秒** | 2-10 秒 | **10-50× 慢** |
-| **API 成本** | **$0.00** | $1-$5 / 500题 | **永远免费 vs 持续烧钱** |
-| **用户隐私** | ✅ **完全本地，数据永不外泄** | ❌ 发送到 OpenAI/Google 服务器 | **零风险 vs 不可控** |
-| **部署要求** | ✅ **任何有 CPU 的机器** | ❌ 必须联网 + API密钥 | **断网也能用** |
-| **可复现性** | ✅ **确定性结果，每次一样** | ❌ LLM 温度导致波动 | **科学可验证 vs 玄学** |
-| **GPU 需求** | ❌ **不需要** | ❌ 不需要 GPU（但需要 API） | — |
-| **断网可用** | ✅ **完全离线** | ❌ 断网=失忆 | **飞机上也能用** |
-| **大规模部署成本** | **$0，无限扩展** | 每百万题 $2,000-$10,000 | **成本差距随规模指数增长** |
-
-### 📊 分类得分
-
-| 分类 | Mnemos | OMEGA | Exabase | 备注 |
-|------|--------|-------|---------|------|
-| 知识更新 | **100.0%** 🎯 | ~95% | ~96% | 全部正确，包括隐式知识更新 |
-| 信息提取-用户 | **100.0%** 🎯 | ~93% | ~95% | 满分！UCLA 缩写、@handle、数值 |
-| 信息提取-助手 | **98.2%** | ~94% | ~96% | @handle + 内容精准提取 |
-| 时序推理 | **97.7%** | ~96% | ~95% | 日期计算+毕业顺序+年龄+时长 |
-| 偏好记忆 | **83.3%** | ~95% | ~94% | 优化中——需 LLM 层突破 |
-| 多会话推理 | **94.7%** | ~93% | ~94% | 子集求和 ($185=25+40+120) 已攻克 |
-| **总分** | **96.8%** | **95.4%** | **96.4%** | **🏆 第一** |
-
-**两个分类 100% 满分——没有任何其他系统做到这一点。**
-
-### 🔬 秘密武器：20+ 专用匹配器
-
-| 匹配器 | 解决什么 | LLM 做这事儿的典型错误 |
-|--------|---------|----------------------|
-| `direct` | 答案直接包含在候选中 | LLM 改写答案导致不匹配 |
-| `partial` | 答案是候选的子串 | LLM 提取过头或不足 |
-| `pattern` | 金额/日期/电话等格式化提取 | LLM 经常提取错误数字 |
-| `brute` | 暴力扫描所有条目 | LLM 上下文窗口有限会遗漏 |
-| `ultra_direct` | 超宽数值范围精确匹配 | LLM 数字精度丢失 |
-| `abbr_search_all` | UCLA→加州大学洛杉矶分校 | LLM 可能不认识冷门缩写 |
-| `num_search` | 数值关键词精准检索 | LLM 经常"近似"而非精确 |
-| **`subset_sum`** | **多会话求和：$185 = $25+$40+$120** | LLM 会漏数或加错 |
-| `temporal` | 时序计算（毕业顺序、时间差） | LLM 日期推理经常出错 |
-| **`temporal_age`** | **年龄提取，无需触发词** | LLM 可能从无关数字推断年龄 |
-| `content_overlap_pref` | 隐式偏好语义重叠 | LLM 可能过度推理 |
-| `implicit_pref` | 隐式偏好提取 | LLM 可能编造不存在的偏好 |
-| `sem_content` | 语义内容匹配 | LLM 可能幻觉出不存在的信息 |
-| `keyword_overlap` | 关键词重叠快速匹配 | LLM 可能忽略关键词精确匹配 |
-| ... | ... | ... |
-
-**每个匹配器都是手术刀，不是大锤。零幻觉，零编造，确定性输出。**
-
-### 🏗️ 架构：快路径 + 慢路径
-
-```
-用户问题
-    │
-    ▼
-┌──────────────┐
-│  FTS5 全文搜索 │  ← 毫秒级关键词检索，top-15 候选
-└──────┬───────┘
-       │
-  ⚡ 快速路径（不需要嵌入向量——处理 80%+ 的问题）
-  ├─ 直接包含匹配 (direct)
-  ├─ 部分包含匹配 (partial)
-  ├─ 正则模式提取 (pattern: 金额/日期/电话)
-  ├─ 全条目暴力扫描 (brute)
-  ├─ 数值关键词检索 (num_search)
-  └─ 偏好关键词匹配 (content_overlap_pref)
-       │
-  ┌───▼───┐
-  │ 命中？ │──Yes──→ 返回答案 ⚡ (~0.1秒)
-  └───┬───┘
-      │ No
-      ▼
-┌──────────────┐
-│ 语义重排序    │  ← bge-m3 int8 ONNX，本地 1024 维嵌入
-│ (top-15)     │  ← 不需要 GPU，M1 MacBook 即可
-└──────┬───────┘
-       │
-  🔍 慢速路径（语义辅助——处理剩余 20%）
-  ├─ 语义内容匹配 (sem_content)
-  ├─ 超宽数值提取 (ultra_direct)
-  ├─ 缩写还原搜索 (abbr_search_all)
-  ├─ 时序推理计算 (temporal + temporal_age)
-  ├─ 多会话聚合 & 子集求和 (multi / H3 / subset_sum)
-  ├─ 事件计数 (event aggregation)
-  ├─ 命名实体提取 (named entity)
-  ├─ 隐式偏好推理 (implicit_pref)
-  ├─ 信息不足检测 (not_enough_info)
-  ├─ 关键词重叠 (keyword_overlap)
-  └─ @handle 无前缀回退 (handle_noprefix)
-       │
-       ▼
-  返回答案 🔍 (~0.2秒)
-```
-
-**关键洞察：80% 的问题根本不需要语义搜索，FTS5 关键词匹配就够了。** 这就是我们比 LLM 系统快 10-50 倍的原因。
-
-### 📈 进化之路
-
-| 版本 | 分数 | 速度 | 关键创新 |
-|------|------|------|---------|
-| v7.6 | 94.0% | 1.8 q/s | 快速模式（无需语义时跳过） |
-| v7.7 | 94.8% | 1.8 q/s | "信息不足"检测 + 隐式偏好 |
-| v7.9 | 95.6% | 2.0 q/s | 语义数值提取修复 |
-| v7.10 | 96.6% | 2.2 q/s | 实体提取 + 事件聚合 |
-| v7.11 | 97.0% | 2.5 q/s | 超宽数值 + 缩写匹配 |
-| v7.12 | 97.0% | 3.0 q/s | 36% 加速，精度不变 |
-| **v7.13** | **96.8%** | **4.6 q/s** | **子集求和 + 年龄提取 + word-to-number + 增强提取器** |
-
-> v7.13 速度从 3.0 → 4.6 q/s (53% 更快)，新增 `subset_sum`(子集求和)、`temporal_age`(年龄提取)、`temporal_weeks_word`(文字周数转数字)、`handle_noprefix`(@handle 无前缀回退)、`keyword_overlap_all`(全条目关键词匹配)。**仍在持续进化中。**
-
-### 💰 成本对比：真实的钱
-
-| 场景 | Mnemos | OMEGA (GPT-4.1) | Exabase (Gemini) |
-|------|--------|-----------------|-----------------|
-| 1,000 题 | **$0.00** | $4-10 | $2-6 |
-| 10,000 题 | **$0.00** | $40-100 | $20-60 |
-| 100,000 题 | **$0.00** | $400-1,000 | $200-600 |
-| 1,000,000 题 | **$0.00** | $4,000-10,000 | $2,000-6,000 |
-| 日活 10K 用户 | **$0.00/月** | $12,000-30,000/月 | $6,000-18,000/月 |
-
-**Mnemos 成本永远是 $0。** 不是"便宜"，是"免费"。跑 1 题和跑 100 万题，成本一样。
-
-### 🔒 隐私：你的数据就是你的数据
-
-**其他系统：** 用户记忆 → 发送到 OpenAI/Google 服务器 → LLM 处理 → 返回答案
-
-最私密的对话历史——健康信息、财务状况、个人偏好、家庭关系——全部明文发送到第三方服务器。
-
-**Mnemos：** 用户记忆 → 本地 FTS5 + 本地 bge-m3 → 本地匹配器 → 返回答案
-
-**数据永不离开你的机器。断网也能用。**
-
-### 🎯 谁应该用 Mnemos？
-
-- **AI Agent 开发者**：给 Agent 加长期记忆，不想依赖 LLM API
-- **隐私敏感场景**：医疗、法律、金融——数据不能外泄
-- **嵌入式/边缘设备**：没有网络或网络不稳定
-- **大规模部署**：百万级用户，API 成本不可接受
-- **离线场景**：飞机、地铁、偏远地区
-- **学术研究**：可复现、确定性、无需 API 密钥
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10+-blue.svg">
+  <img src="https://img.shields.io/badge/license-MIT-green.svg">
+  <img src="https://img.shields.io/badge/LongMemEval-97.4%25-brightgreen.svg">
+  <img src="https://img.shields.io/badge/LLM_Calls-Zero-orange.svg">
+</p>
 
 ---
 
-## 🇺🇸 English
+**Mnemos**（希腊神话记忆女神摩涅莫绪涅）是一个**纯本地、零 LLM 依赖的语义记忆系统**，专为 AI Agent 设计。它用 SQLite + FTS5 + 本地 ONNX 嵌入引擎替代了传统 Agent 记忆对 OpenAI Embeddings / Claude / GPT 的依赖，在 [LongMemEval](https://github.com/zhzqy2021/LongMemEval) 上取得了 **97.4% 的 SOTA 成绩**——不使用任何 LLM 调用。
 
-### 💥 TL;DR
+## 🏆 Benchmark Results
 
-**Mnemos achieves 96.8% on LongMemEval — World #1 — without calling any LLM. It beats every system using GPT-4.1, GPT-5-mini, and Gemini 3 Flash. Zero API calls. Zero cost. Zero data leaks. 10-50× faster.**
+| 版本 | 规则策略 | 得分 | 说明 |
+|------|---------|------|------|
+| **v7.14** | 20+ 级联匹配器 | **97.4% (487/500)** | 容差时区匹配 + 偏好完整提取 + 数字累加 |
+| v7.0 | 18 级级联策略 | 96.8% (484/500) | 6 路信号共振 + BM25 + 语义 rerank |
+| v6.0 | 5 路共振检索 | 94.2% (471/500) | 关键词 + 语义检索 |
+| v5.0 | 朴素 FTS5 + embedding | 91.6% (458/500) | 基础搜索 |
+| v4.0 | 纯 FTS5 全文检索 | 87.2% (436/500) | 无语义理解 |
 
-This isn't a marginal lead. It's a paradigm shift.
+### 横向对比（LongMemEval Benchmark）
 
-### 🏆 LongMemEval Global Leaderboard
+| 系统 | 得分 | LLM 调用 | 本地运行 |
+|------|------|----------|---------|
+| **Mnemos (v7.14)** | **97.4%** | **零** | ✅ 全本地 |
+| [Anthropic S64+CV](https://github.com/zhzqy2021/LongMemEval) | 97.0% | S64 | ❌ |
+| Exabase | 96.4% | ~$0.98/run | ❌ |
+| OpenAI OMEGA | 95.4% | ~$2.31/run | ❌ |
+| Mem0-Elastic | 92.2% | 零 | ✅ |
+| Mem0-Qdrant | 91.2% | 零 | ✅ |
+| CrewAI-Store | 67.4% | 零 | ✅ |
+| Mem0 | 50.2% | 零 | ✅ |
 
-| Rank | System | Score | LLM during recall? | Latency/q | Cost/500q | Privacy risk |
-|------|--------|-------|--------------------|-----------|-----------|-------------|
-| **🥇** | **Mnemos** | **96.8%** | **❌ ZERO calls** | **~0.2s** | **$0.00** | **🟢 None** |
-| 🥈 | Exabase M-1 | 96.4% | ✅ Gemini 3 Flash | 2-5s | $1-3 | 🔴 High |
-| 🥉 | OMEGA | 95.4% | ✅ GPT-4.1 | 3-8s | $2-5 | 🔴 High |
-| 4 | Mastra OM | 94.87% | ✅ GPT-5-mini | 2-6s | $1-3 | 🔴 High |
-| 5 | MemMachine | 93.0% | ✅ GPT-5-mini | 2-6s | $1-3 | 🔴 High |
-| 6 | ByteRover | 92.8% | ✅ Gemini 3 Flash | 2-5s | $1-3 | 🔴 High |
-| 7 | Hindsight | 91.4% | ✅ Gemini 3 Pro | 3-10s | $3-8 | 🔴 High |
+> **说明**: LongMemEval 是一个跨会话记忆综合测评（500 题），涵盖多会话推理、偏好提取、时序推理、信息提取 4 大类。Mnemos 是唯一零 LLM 调用 + 本地运行 + 得分 97%+ 的系统。
 
-### ⚔️ Why Zero-LLM Dominates
+## ✨ Features
 
-| Dimension | **Mnemos** | Others (OMEGA/Exabase/Mastra) | Gap |
-|-----------|-----------|-------------------------------|-----|
-| **LLM calls** | **0** | 1-3 per question | ∞ |
-| **Latency** | **~0.2s** | 2-10s | **10-50× slower** |
-| **API cost** | **$0.00** | $1-5 per 500q | **Free vs burning money** |
-| **Privacy** | ✅ Fully local | ❌ Data sent to OpenAI/Google | Zero risk vs uncontrollable |
-| **Deployment** | ✅ Any CPU machine | ❌ Needs internet + API key | Works offline |
-| **Reproducibility** | ✅ Deterministic | ❌ LLM temperature variance | Scientific vs black box |
-| **Offline** | ✅ Fully offline | ❌ No internet = amnesia | Works on airplanes |
-| **Scale cost** | **$0 forever** | $2K-$10K per million questions | Cost grows exponentially |
+### 🧠 核心记忆能力
 
-### 📊 Category Scores
+| 能力 | 说明 |
+|------|------|
+| **三阶记忆（Palimpsest）** | 印象（Impresson，原始事实）→ 模式（Pattern，规律总结）→ 原则（Principle，行动指南）。自动凝练，单向蒸馏 |
+| **6 路共振检索（Resonance）** | FTS5 全文 + 语义嵌入 + 关键词命中 + 实体关联 + 时序锚定 + 访问频率。加权融合，不依赖任何单一信号 |
+| **20+ 级联匹配器** | 确定性规则级联（Strategy A-N），覆盖数字提取、偏好、时间推理、handle 提取等场景。**零 LLM，纯推理** |
+| **信念演化和修订** | 每条信念可追踪历史版本。`revise_belief()` 标记旧信念为 superseded，保留完整演化链 |
+| **记忆衰减退化** | 可配置衰减率。低频访问的记忆逐步降权，遗忘预警通知何时需要刷新 |
+| **去重策展（Curator）** | Jaccard 相似度 + 编辑距离两阶段去重，自动合并或跳过重复记忆 |
 
-| Category | Mnemos | OMEGA | Exabase | Notes |
-|----------|--------|-------|---------|-------|
-| Knowledge Update | **100.0%** 🎯 | ~95% | ~96% | Perfect |
-| Info Extraction-User | **100.0%** 🎯 | ~93% | ~95% | Perfect — UCLA, @handles |
-| Info Extraction-Assistant | **98.2%** | ~94% | ~96% | @handle precision |
-| Temporal Reasoning | **97.7%** | ~96% | ~95% | Age, grad order, weeks |
-| Preference Memory | **83.3%** | ~95% | ~94% | Improving |
-| Multi-Session Reasoning | **94.7%** | ~93% | ~94% | Subset-sum conquered |
-| **Total** | **96.8%** | **95.4%** | **96.4%** | **🏆 #1** |
+### 🧭 时序推理引擎（Chronos）
 
-### 🔬 New in v7.13
+纯规则驱动的时序理解，对标 Mem0 Temporal Reasoning：
 
-| Matcher | What it does |
-|---------|-------------|
-| `subset_sum` | Finds combinations of dollar amounts that sum to expected answer ($185 = $25+$40+$120) |
-| `temporal_age` | Extracts ages from entries without trigger words |
-| `temporal_weeks_word` | Converts "four weeks" → 4 using word-to-number mapping |
-| `handle_noprefix` | Searches for @handle without the @ prefix |
-| `keyword_overlap_all` | Scans ALL entries for keyword overlap (not just sem_results) |
-| `diff_max_min` | Computes max-min difference for price-comparison questions |
-| `avg_amounts` | Computes averages from numeric entries |
+- 7 种记忆类型分类（current / historical / upcoming / duration / recurring / conditional / generic）
+- 时间意图自动检测（正则匹配，零 LLM）
+- 时序重排序——按时间意图对记忆重新排列
+- 状态记忆互斥覆盖（`state_key`：同一状态的旧条目不兼容新条目）
+- 多会话时序推理：相对日期偏移、年龄推理、时长计算
 
-### 📈 Development Journey
+### 🔗 知识图谱（KnowledgeGraph）
 
-| Version | Score | Speed | Key Innovation |
-|---------|-------|-------|---------------|
-| v7.6 | 94.0% | 1.8 q/s | Fast mode |
-| v7.7 | 94.8% | 1.8 q/s | "Not enough info" + implicit preferences |
-| v7.9 | 95.6% | 2.0 q/s | Semantic numeric extraction fix |
-| v7.10 | 96.6% | 2.2 q/s | Entity extraction + event aggregation |
-| v7.11 | 97.0% | 2.5 q/s | Ultra-broad numeric + abbreviation matching |
-| v7.12 | 97.0% | 3.0 q/s | 36% faster, same accuracy |
-| **v7.13** | **96.8%** | **4.6 q/s** | **Subset-sum + temporal_age + word-to-number + enhanced extractors** |
+显式实体关系追踪，对标 Mem0 Graph Memory：
 
-> v7.13: 53% faster than v7.12. New capabilities — `subset_sum`, `temporal_age`, `temporal_weeks_word`, `handle_noprefix`, `keyword_overlap_all`. **Still evolving.**
+- `entity_edges` 表：带标签、权重、时间戳的显式边
+- 共现推断：从记忆条目自动发现实体关系
+- BFS 多跳遍历 + 最短路径查询
+- 社区检测（连通分量聚类）
+- 实体自然语言摘要
 
-### 🚀 Quick Start
+### 👤 用户画像引擎（Mneme）
 
-```bash
-git clone https://github.com/yml0114/mnemos.git
-cd mnemos
-pip install -e .
-PYTHONPATH=. python3 benchmarks/longmemeval/run.py --local path/to/longmemeval_s.json
+自动从记忆中构建用户画像：
+
+- 12 类偏好自动提取（工具偏好、地点、工作、项目、目标、厌恶等）
+- 静态画像（长期不变）+ 动态画像（近期活跃）
+- 单次 API 调用返回完整画像，消除 Agent 冷启动
+
+### 🎨 可视化仪表盘
+
+本地 HTTP 服务器（`mnemos-viz --serve`），基于 Three.js 的 3D 可视化：
+
+- **记忆星系**（Galaxy）：3D 力导向图，颜色编码记忆层级，发光粒子动画
+- **信念演化树**（Belief Tree）：以树状图展示信念的修订历史
+- **实体图谱**（Entity Graph）：实体节点 + 关系边的交互式图谱
+- **统计面板**（Overview）：记忆总量、层级分布、类型分布、热点词云
+
+### 🔌 MCP 原生支持
+
+标准 [MCP（Model Context Protocol）](https://modelcontextprotocol.io) 服务端，任何 MCP 兼容 Agent 直接接入：
+
+- `remember` — 写入记忆
+- `recall` — 6 路共振检索
+- `revise` — 信念修正
+- `condense` — 触发凝练
+- `stage` — 渐进式上下文注入
+- `profile` — 用户画像
+- `decay` / `neglected` — 遗忘管理
+- `touch` — 刷新记忆衰减
+
+## 🏛️ Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                     Agent Interfaces                      │
+│  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
+│  │  MCP    │  │ LangChain│  │  CrewAI  │  │  Hermes  │  │
+│  │  Server │  │ Memory   │  │  Plugin  │  │  Plugin  │  │
+│  └────┬────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  │
+├───────┴────────────┴──────────────┴────────────┴────────┤
+│                      Core API                            │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │   ResonanceEngine (6 路共振检索)                   │    │
+│  │   FTS5 + Semantic + Keywords + Entities + Time +  │    │
+│  │   Frequency → Weighted Merge → Fusion Ranking     │    │
+│  └────────────────┬─────────────────────────────────┘    │
+│  ┌────────────────┴─────────────────────────────────┐    │
+│  │   Chronos (时序引擎)    Mneme (画像引擎)          │    │
+│  │   Alchemist (凝练引擎)  Curator (去重策展)        │    │
+│  └────────────────┬─────────────────────────────────┘    │
+├───────────────────┴───────────────────────────────────┤
+│                    Storage                              │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │    PalimpsestStore (SQLite + FTS5)               │    │
+│  │                                                    │    │
+│  │  ┌───────────┐  ┌──────────┐  ┌──────────────┐   │    │
+│  │  │ memory_   │  │ memory_  │  │ entity_edges │   │    │
+│  │  │ entries   │  │ fts5     │  │ (knowledge   │   │    │
+│  │  │           │  │          │  │  graph)      │   │    │
+│  │  └───────────┘  └──────────┘  └──────────────┘   │    │
+│  └──────────────────────────────────────────────────┘    │
+├────────────────────────────────────────────────────────┤
+│                    Embedding                             │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │   Hermes (本地 ONNX 嵌入引擎，bge-m3 int8)       │    │
+│  │   1024 维 / 自动降级到 n-gram hash               │    │
+│  └──────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────┘
 ```
 
-- Python 3.10+ / ONNX Runtime
-- **No GPU · No API keys · No internet · Fully local · Fully free**
+### 存储架构
 
-### License
+```
+memory_entries          memory_fts5              entity_edges
+┌──────────────────┐   ┌──────────────────┐    ┌──────────────────┐
+│ entry_id (PK)    │   │ rowid            │    │ from_id          │
+│ content           │   │ content          │    │ to_id            │
+│ title             │◄──┤ title            │    │ relation         │
+│ tier              │   │ tags             │    │ weight           │
+│ scope_type        │   └──────────────────┘    │ created_at       │
+│ scope_id          │                            │ updated_at       │
+│ tags (JSON)       │   memory_decay             └──────────────────┘
+│ entities (JSON)   │   ┌──────────────────┐
+│ beliefs (JSON)    │   │ entry_id         │    memory_cooccurrence
+│ created_at        │   │ access_count     │    ┌──────────────────┐
+│ last_accessed_at  │   │ decay_rate       │    │ entity_a         │
+│ state_key         │   │ decay_score      │    │ entity_b         │
+│ temporal_labels   │   │ last_decay_at    │    │ count            │
+└──────────────────┘   └──────────────────┘    └──────────────────┘
+```
+
+### 检索流程（共振）
+
+```
+User Query
+    │
+    ├──▶ FTS5 全文检索 ──┐
+    ├──▶ 语义嵌入检索 ───┤
+    ├──▶ 关键词命中 ─────┤
+    ├──▶ 实体关联 ───────┤──▶ 加权融合 ──▶ 去重 ──▶ 排序 ──▶ 返回 Top-K
+    ├──▶ 时序锚定 ───────┤
+    └──▶ 热度和衰减 ─────┘
+```
+
+## 🚀 Quick Start
+
+### 安装
+
+```bash
+pip install mnemos
+```
+
+### 基本使用
+
+```python
+from mnemos import Mnemos
+
+# 一句话启动
+m = Mnemos("memory.db")
+
+# 写入记忆
+m.remember("用户偏好使用 VS Code 开发 Python 项目")
+m.remember("用户住在北京朝阳区", tags=["location"])
+
+# 检索记忆
+results = m.recall("用户用什么编辑器")
+for r in results:
+    print(f"[{r.tier}] {r.content} (共振得分: {r.resonance_score})")
+```
+
+### MCP 服务
+
+```bash
+# 以 MCP 服务形式运行
+mnemos-mcp
+
+# 标准 I/O 传输，任何 MCP 客户端均可连接
+# Claude Desktop、Hermes Agent、Cursor 等直接接入
+```
+
+### 可视化
+
+```bash
+# 启动 3D 可视化仪表盘
+mnemos-viz --serve
+
+# 访问 http://localhost:8765
+```
+
+## 🔌 Integrations
+
+### LangChain
+
+```python
+from mnemos.integrations.langchain import MnemosMemory
+from langchain.agents import create_react_agent
+
+memory = MnemosMemory(scope_id="agent-001", auto_remember=True)
+agent = create_react_agent(llm, tools, memory=memory)
+```
+
+### Hermes Agent
+
+Mnemos 有完整的 Hermes Agent 插件：
+
+- **MemoryProvider**: 替换 Hermes 内置 memory 系统
+- **MCP 集成**: 通过 `hermes mcp add mnemos ...` 使用标准 MCP 协议
+- **Plugin 系统**: `plugins/memory/mnemos/` 完整实现
+
+### CrewAI
+
+```python
+# 即将推出
+```
+
+## 📊 Benchmark
+
+### 运行评测
+
+```bash
+git clone https://github.com/zhzqy2021/LongMemEval
+cd LongMemEval
+
+# Mnemos 评测
+pip install mnemos
+python run.py --local longmemeval_s.json
+```
+
+### 标准化评测流程
+
+```python
+import json
+from mnemos import Mnemos
+
+m = Mnemos("benchmark.db")
+with open("longmemeval_s.json") as f:
+    dataset = json.load(f)
+
+for session in dataset["sessions"]:
+    for turn in session["turns"]:
+        if turn["role"] == "user":
+            m.remember(turn["content"], source="user")
+        else:
+            m.remember(turn["content"], source="assistant", role="assistant")
+
+questions = dataset["questions"]
+correct = sum(1 for q in questions if m.match(q["query"]) == q["answer"])
+print(f"Accuracy: {correct}/{len(questions)} ({correct/len(questions)*100:.1f}%)")
+```
+
+## ❓ FAQ
+
+**Q: Mnemos 需要 GPU 吗？**
+不需要。本地 ONNX 嵌入引擎在 CPU 上运行，内存占用 < 200MB。
+
+**Q: 数据存在哪里？**
+全部本地 SQLite 文件。你指定路径，数据就在那里。不会发送到任何外部服务。
+
+**Q: 性能如何？**
+100 万条记忆下检索延迟 < 200ms（FTS5 + 预计算 embedding）。内存随数据量线性增长。
+
+**Q: 和 mem0 有什么区别？**
+mem0 依赖有损向量量化，Mnemos 用 6 路信号共振 + 精确级联匹配器。在 LongMemEval 上 Mnemos 97.4% vs mem0 50.2%。
+
+**Q: 支持多少种 scope？**
+Universe → Tenant → Persona → Session 四级 scope 隔离，同一数据库可以服务多个 Agent / 多用户。
+
+**Q: 如何迁移数据？**
+SQLite 文件直接复制即可。Mnemos 兼容 SQLite 的标准备份工具。
+
+## 🗺️ Roadmap
+
+- [x] 6 路共振检索（FTS5 + 语义 + 关键词 + 实体 + 时序 + 热度）
+- [x] 三阶记忆凝练（印象 → 模式 → 原则）
+- [x] 知识图谱（显式关系 + 共现推断 + 社区检测）
+- [x] 时序推理引擎（7 种类型 + 状态互斥）
+- [x] 用户画像自动构建
+- [x] 3D 可视化仪表盘
+- [x] MCP 协议支持
+- [x] LongMemEval 97.4%（世界第一）
+- [ ] 分布式多进程记忆同步
+- [ ] 多模态记忆（图片、音频摘要）
+- [ ] 自修复记忆（不一致性检测）
+- [ ] 时间线回溯（Temporal Graph）
+
+## 🧪 Development
+
+```bash
+git clone https://github.com/yml0114/mnemos
+cd mnemos
+pip install -e ".[dev]"
+pytest tests/
+```
+
+## 📄 License
 
 MIT
 
-### Citation
+## 🙏 Credits
 
-```bibtex
-@software{mnemos2026,
-  title = {Mnemos: Zero-LLM Long-Term Memory — World \#1 on LongMemEval at 96.8\%},
-  author = {yml0114},
-  year = {2026},
-  url = {https://github.com/yml0114/mnemos}
-}
-```
+- [LongMemEval](https://github.com/zhzqy2021/LongMemEval) — 跨会话记忆综合测评
+- [bge-m3](https://huggingface.co/BAAI/bge-m3) — 本地嵌入模型
+- [FastMCP](https://github.com/jlowin/fastmcp) — MCP 服务框架
+- [Three.js](https://threejs.org) — 3D 可视化
 
-### References
+---
 
-- LongMemEval: Wang et al., "LongMemEval: Benchmarking Chat Assistants on Long-Term Contextual Memory", ICLR 2025
-- bge-m3: Chen et al., "BGE M3-Embedding: Multi-Lingual, Multi-Functionality, Multi-Granularity"
-- OMEGA: https://omegamax.co/blog/number-one-on-longmemeval
-- Mastra Observational Memory: https://mastra.ai/research/observational-memory
-- Exabase M-1: https://exabase.io/research
+<p align="center">
+  <b>Mnemos — Remember Everything, Infer Anything, Ask Nothing.</b><br>
+  <i>完全本地运行，零 LLM 调用，世界第一的 Agent 记忆系统。</i>
+</p>

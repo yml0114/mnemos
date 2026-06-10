@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mnemos"
-version = "0.2.0"
+version = "7.14.0"
 description = "独立记忆世界 — 可移植的多层AI记忆系统，支持6路信号融合检索、时序推理、信念修正与用户画像"
 readme = "README.md"
 license = {text = "Apache-2.0"}
