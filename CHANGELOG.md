@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.15.0] - 2026-06-11
+
+### Added
+- **分布式多进程同步 (SyncEngine)** — push/pull/merge 跨 SQLite 实例记忆同步、冲突检测与消解 (LWW/keep-local/keep-remote)
+- **多模态记忆 (MultimodalEngine)** — 媒体附件存储与检索、按媒体类型/摘要/嵌入向量搜索、自动摘要生成
+- **自修复记忆 (HealerEngine)** — 不一致性检测（重复/矛盾/时序异常/引用断裂）、自动修复 (`auto_heal`)、监控面板
+- **时间线回溯 (TemporalGraphEngine)** — 事件记录与回放、快照机制、分支与合并检测、Graphviz/GraphML 导出
+- **MCP 15 工具** — 新增 `sync` `multimodal` `heal` `timeline` 4 个 MCP 工具，总工具数从 11 增至 15
+- **可视化面板扩展** — `DashboardProvider` 新增 `sync_status()` `multimodal_gallery()` `heal_overview()` `temporal_graph_data()`
+
+### Changed
+- 版本号从 7.14.0 跳至 7.15.0
+- MCP server (`mnemos/mcp/server.py`)：新增 4 个操作处理函数，注册到 `_ACTIONS` 字典
+- `mnemos/__init__.py`：更新 MCP 工具数量和描述
+- 存储层 (`palimpsest.py`)：新增 4 个功能所需的数据库表 schema
+- 可视化层 (`data_provider.py`)：新增 4 个数据提供方法
+
+### Benchmark
+- LongMemEval 保持 97.4% (487/500) — 世界第一，未因新增能力而退化
+
 ## [7.14.0] - 2026-06-11
 
 ### Added

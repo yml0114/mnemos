@@ -221,13 +221,122 @@ CREATE INDEX IF NOT EXISTS idx_bel_mem     ON belief_log(memory_id);
 CREATE INDEX IF NOT EXISTS idx_edge_from   ON entity_edges(from_id);
 CREATE INDEX IF NOT EXISTS idx_edge_to     ON entity_edges(to_id);
 CREATE INDEX IF NOT EXISTS idx_edge_rel    ON entity_edges(relation);
-"""
+""";
+
+_CREATE_SYNC_LOG = """
+CREATE TABLE IF NOT EXISTS sync_log (
+    sync_id     TEXT PRIMARY KEY,
+    memory_id   TEXT NOT NULL,
+    entity_id   TEXT NOT NULL DEFAULT '',
+    operation   TEXT NOT NULL CHECK (operation IN ('create', 'update', 'delete')),
+    tier        TEXT NOT NULL DEFAULT 'impression',
+    payload     TEXT NOT NULL DEFAULT '{}',
+    node_id     TEXT NOT NULL DEFAULT 'local',
+    vector_clock TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL,
+    synced_at   TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'pending' CHECK (sync_status IN ('pending', 'inflight', 'conflict', 'done'))
+);
+CREATE INDEX IF NOT EXISTS idx_sync_mem   ON sync_log(memory_id);
+CREATE INDEX IF NOT EXISTS idx_sync_node  ON sync_log(node_id);
+CREATE INDEX IF NOT EXISTS idx_sync_stat  ON sync_log(sync_status);
+CREATE INDEX IF NOT EXISTS idx_sync_time  ON sync_log(created_at);
+""";
+
+_CREATE_MEDIA_ATTACHMENTS = """
+CREATE TABLE IF NOT EXISTS media_attachments (
+    media_id    TEXT PRIMARY KEY,
+    memory_id   TEXT NOT NULL,
+    media_type  TEXT NOT NULL CHECK (media_type IN ('image', 'audio', 'video', 'file', 'link')),
+    mime_type   TEXT NOT NULL DEFAULT '',
+    filename    TEXT NOT NULL DEFAULT '',
+    storage_uri TEXT NOT NULL DEFAULT '',
+    byte_size   INTEGER NOT NULL DEFAULT 0,
+    metadata    TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL,
+    FOREIGN KEY (memory_id) REFERENCES impressions(entry_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_media_mem ON media_attachments(memory_id);
+""";
+
+_CREATE_MEDIA_EMBEDDINGS = """
+CREATE TABLE IF NOT EXISTS media_embeddings (
+    media_id    TEXT PRIMARY KEY,
+    model       TEXT NOT NULL,
+    vector      BLOB NOT NULL,
+    dim         INTEGER NOT NULL,
+    dtype       TEXT NOT NULL DEFAULT 'float32',
+    modality    TEXT NOT NULL DEFAULT 'image',
+    created_at  TEXT NOT NULL,
+    FOREIGN KEY (media_id) REFERENCES media_attachments(media_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_media_emb_mod ON media_embeddings(model);
+""";
+
+_CREATE_INCONSISTENCY_LOG = """
+CREATE TABLE IF NOT EXISTS inconsistency_log (
+    issue_id    TEXT PRIMARY KEY,
+    memory_id_a TEXT NOT NULL,
+    memory_id_b TEXT,
+    issue_type  TEXT NOT NULL CHECK (issue_type IN (
+        'contradiction', 'duplication', 'outdated', 'orphan', 'conflict', 'schema_drift'
+    )),
+    severity    TEXT NOT NULL DEFAULT 'low' CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+    description TEXT NOT NULL DEFAULT '',
+    resolution  TEXT NOT NULL DEFAULT 'pending' CHECK (resolution IN ('pending', 'auto_fixed', 'superseded', 'dismissed')),
+    resolved_at TEXT,
+    detected_at TEXT NOT NULL,
+    metadata    TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_incon_res  ON inconsistency_log(resolution);
+CREATE INDEX IF NOT EXISTS idx_incon_type ON inconsistency_log(issue_type);
+""";
+
+_CREATE_TEMPORAL_EVENTS = """
+CREATE TABLE IF NOT EXISTS temporal_events (
+    event_id    TEXT PRIMARY KEY,
+    memory_id   TEXT NOT NULL,
+    event_type  TEXT NOT NULL DEFAULT 'observation',
+    timestamp   TEXT NOT NULL,
+    end_time    TEXT,
+    precision   TEXT NOT NULL DEFAULT 'day',
+    confidence  REAL NOT NULL DEFAULT 1.0,
+    state_before TEXT,
+    state_after TEXT,
+    metadata    TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL,
+    FOREIGN KEY (memory_id) REFERENCES impressions(entry_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_temp_ev_mem  ON temporal_events(memory_id);
+CREATE INDEX IF NOT EXISTS idx_temp_ev_type ON temporal_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_temp_ev_ts   ON temporal_events(timestamp);
+""";
+
+_CREATE_TEMPORAL_GRAPH = """
+CREATE TABLE IF NOT EXISTS temporal_graph_edges (
+    from_event  TEXT NOT NULL,
+    to_event    TEXT NOT NULL,
+    relation    TEXT NOT NULL DEFAULT 'causes',
+    weight      REAL NOT NULL DEFAULT 1.0,
+    metadata    TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (from_event, to_event, relation),
+    FOREIGN KEY (from_event) REFERENCES temporal_events(event_id) ON DELETE CASCADE,
+    FOREIGN KEY (to_event)   REFERENCES temporal_events(event_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_tge_from ON temporal_graph_edges(from_event);
+CREATE INDEX IF NOT EXISTS idx_tge_to   ON temporal_graph_edges(to_event);
+""";
 
 ALL_SCHEMA = "\n".join([
     _CREATE_IMPRESSIONS, _CREATE_PATTERNS, _CREATE_PRINCIPLES,
     _CREATE_ENTITY_INDEX, _CREATE_ENTITY_COOCCUR, _CREATE_ENTITY_EDGES,
     _CREATE_BELIEF_LOG,
     _CREATE_EMBEDDINGS, _CREATE_FTS, _FTS_TRIGGERS, _INDEXES,
+    _CREATE_SYNC_LOG,
+    _CREATE_MEDIA_ATTACHMENTS, _CREATE_MEDIA_EMBEDDINGS,
+    _CREATE_INCONSISTENCY_LOG,
+    _CREATE_TEMPORAL_EVENTS, _CREATE_TEMPORAL_GRAPH,
 ])
 
 

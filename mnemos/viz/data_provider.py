@@ -269,3 +269,123 @@ class DashboardProvider:
             "decay_distribution": dict(decay_rows) if decay_rows else {},
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    # ── 同步状态 ────────────────────────────────────────
+
+    def sync_status(self) -> dict[str, Any]:
+        """同步概览（用于可视化）"""
+        self._connect()
+        try:
+            store = self._store
+            rows = store.db.execute(
+                "SELECT sync_status, COUNT(*) as cnt FROM sync_log GROUP BY sync_status"
+            ).fetchall()
+            status = {r["sync_status"]: r["cnt"] for r in rows}
+            total = sum(status.values()) if status else 0
+            return {
+                "total": total,
+                "pending": status.get("pending", 0),
+                "inflight": status.get("inflight", 0),
+                "conflict": status.get("conflict", 0),
+                "done": status.get("done", 0),
+            }
+        except Exception:
+            return {"total": 0, "error": "sync_log not available"}
+
+    # ── 多模态图库 ──────────────────────────────────────
+
+    def multimodal_gallery(self, limit: int = 50) -> dict[str, Any]:
+        """媒体附件概览"""
+        self._connect()
+        try:
+            store = self._store
+            rows = store.db.execute(
+                "SELECT attachment_id, memory_id, media_type, file_path, "
+                "summary, created_at FROM media_attachments "
+                "ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+            by_type: dict[str, int] = {}
+            items = []
+            for r in rows:
+                mt = r["media_type"] or "unknown"
+                by_type[mt] = by_type.get(mt, 0) + 1
+                items.append(dict(r))
+            return {"total": len(items), "by_type": by_type, "items": items}
+        except Exception:
+            return {"total": 0, "error": "media_attachments not available"}
+
+    # ── 自修复监控 ──────────────────────────────────────
+
+    def heal_overview(self) -> dict[str, Any]:
+        """不一致性监控面板"""
+        self._connect()
+        try:
+            store = self._store
+            total = store.db.execute(
+                "SELECT COUNT(*) FROM inconsistency_log"
+            ).fetchone()[0]
+            by_type = store.db.execute(
+                "SELECT inconsistency_type, COUNT(*) as cnt "
+                "FROM inconsistency_log GROUP BY inconsistency_type"
+            ).fetchall()
+            by_severity = store.db.execute(
+                "SELECT severity, COUNT(*) as cnt "
+                "FROM inconsistency_log GROUP BY severity"
+            ).fetchall()
+            healed = store.db.execute(
+                "SELECT COUNT(*) FROM inconsistency_log WHERE auto_healed=1"
+            ).fetchone()[0]
+            recent = store.db.execute(
+                "SELECT * FROM inconsistency_log ORDER BY created_at DESC LIMIT 10"
+            ).fetchall()
+            return {
+                "total": total,
+                "healed": healed,
+                "unhealed": total - healed,
+                "by_type": {r["inconsistency_type"]: r["cnt"] for r in by_type},
+                "by_severity": {r["severity"]: r["cnt"] for r in by_severity},
+                "recent": [dict(r) for r in recent],
+            }
+        except Exception:
+            return {"total": 0, "error": "inconsistency_log not available"}
+
+    # ── 时间线图谱 ──────────────────────────────────────
+
+    def temporal_graph_data(self, max_events: int = 100) -> dict[str, Any]:
+        """时间线演化图谱数据（D3 力导向图格式）"""
+        self._connect()
+        try:
+            store = self._store
+            events = store.db.execute(
+                "SELECT te.* FROM temporal_events te "
+                "ORDER BY te.created_at DESC LIMIT ?", (max_events,)
+            ).fetchall()
+            event_ids = [r["event_id"] for r in events]
+            nodes = []
+            for r in events:
+                nodes.append({
+                    "id": r["event_id"],
+                    "memory_id": r["memory_id"][:16],
+                    "type": r["event_type"],
+                    "tier": r.get("tier", ""),
+                    "summary": (r.get("summary", "") or "")[:60],
+                    "created_at": r.get("created_at", ""),
+                })
+            edges = []
+            if event_ids:
+                ph = ",".join("?" * len(event_ids))
+                edge_rows = store.db.execute(
+                    f"SELECT * FROM temporal_graph_edges "
+                    f"WHERE source_event IN ({ph}) AND target_event IN ({ph})",
+                    event_ids + event_ids,
+                ).fetchall()
+                for e in edge_rows:
+                    edges.append({
+                        "source": e["source_event"],
+                        "target": e["target_event"],
+                        "relation": e["relation"],
+                        "weight": e.get("weight", 1.0),
+                    })
+            return {"nodes": nodes, "edges": edges, "total_events": len(nodes)}
+        except Exception:
+            return {"nodes": [], "edges": [], "error": "temporal_events not available"}

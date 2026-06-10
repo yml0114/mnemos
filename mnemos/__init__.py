@@ -29,7 +29,11 @@ Mnemos — 独立记忆世界
     mnemos.evaluation    — 评测裁判 (LLMJudge + RuleJudge)
     mnemos.profile       — 用户画像 (Mneme: 自动画像构建)
     mnemos.viz           — 可视化 (DashboardProvider, 3D 仪表盘)
-    mnemos.mcp           — MCP 协议服务 (6 个工具)
+    mnemos.mcp           — MCP 协议服务 (15 个工具)
+    mnemos.sync          — 分布式多进程记忆同步 (SyncEngine)
+    mnemos.multimodal    — 多模态记忆 (MultimodalEngine: 图片/音频摘要)
+    mnemos.healer        — 自修复记忆 (HealerEngine: 不一致性检测与自动修复)
+    mnemos.temporal_graph— 时间线回溯 (TemporalGraphEngine: 演化图谱与因果追踪)
 """
 
 __version__ = "0.2.0"

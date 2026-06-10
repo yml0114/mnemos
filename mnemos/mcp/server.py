@@ -39,6 +39,10 @@ from mnemos.core.models import (
 )
 from mnemos.retrieval.resonance import ResonanceEngine
 from mnemos.storage.palimpsest import PalimpsestStore
+from mnemos.sync.engine import SyncEngine
+from mnemos.multimodal.engine import MultimodalEngine
+from mnemos.healer.engine import HealerEngine
+from mnemos.temporal_graph.engine import TemporalGraphEngine
 
 # ── FastMCP 实例 ──────────────────────────────────────────
 
@@ -48,6 +52,10 @@ mcp = FastMCP("mnemos")
 
 _store: PalimpsestStore | None = None
 _engine: ResonanceEngine | None = None
+_sync_engine: SyncEngine | None = None
+_mm_engine: MultimodalEngine | None = None
+_healer: HealerEngine | None = None
+_tg_engine: TemporalGraphEngine | None = None
 
 
 def _get_store() -> PalimpsestStore:
@@ -64,6 +72,34 @@ def _get_engine() -> ResonanceEngine:
     if _engine is None:
         _engine = ResonanceEngine(_get_store())
     return _engine
+
+
+def _get_sync() -> SyncEngine:
+    global _sync_engine
+    if _sync_engine is None:
+        _sync_engine = SyncEngine(_get_store())
+    return _sync_engine
+
+
+def _get_multimodal() -> MultimodalEngine:
+    global _mm_engine
+    if _mm_engine is None:
+        _mm_engine = MultimodalEngine(_get_store())
+    return _mm_engine
+
+
+def _get_healer() -> HealerEngine:
+    global _healer
+    if _healer is None:
+        _healer = HealerEngine(_get_store())
+    return _healer
+
+
+def _get_temporal() -> TemporalGraphEngine:
+    global _tg_engine
+    if _tg_engine is None:
+        _tg_engine = TemporalGraphEngine(_get_store())
+    return _tg_engine
 
 
 # ── Action 处理器 ─────────────────────────────────────────
@@ -377,6 +413,200 @@ def _do_import(p: dict) -> str:
     return json.dumps(results, ensure_ascii=False)
 
 
+# ── 新功能: 分布式同步 ────────────────────────────────────
+
+
+def _do_sync(p: dict) -> str:
+    """分布式多进程记忆同步。
+
+    params:
+      action — 操作: push/pull/merge/resolve/status
+      remote_db — 远程 SQLite 数据库路径 (push/pull/merge)
+      strategy — 冲突消解策略: lww/keep_local/keep_remote
+      record_id — 单条记录 ID (resolve)
+    """
+    sync = _get_sync()
+    action = p.get("action", "status")
+    try:
+        if action == "push":
+            result = sync.push(
+                scope_type=p.get("scope_type"),
+                scope_id=p.get("scope_id"),
+            )
+        elif action == "pull":
+            result = sync.pull(
+                remote_db_path=p.get("remote_db", ""),
+            )
+        elif action == "merge":
+            result = sync.merge(
+                remote_db_path=p.get("remote_db", ""),
+                strategy=p.get("strategy", "lww"),
+            )
+        elif action == "resolve":
+            # 解析冲突：手动指定保留策略
+            result = sync.resolve(
+                conflict_id=p.get("conflict_id", ""),
+                resolution=p.get("resolution", "keep_local"),
+            )
+        elif action == "conflicts":
+            result = sync.resolve_conflicts()
+        else:
+            result = sync.status()
+    except Exception as e:
+        result = {"status": "error", "message": str(e)}
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+# ── 新功能: 多模态记忆 ────────────────────────────────────
+
+
+def _do_multimodal(p: dict) -> str:
+    """多模态记忆引擎（图片/音频摘要）。
+
+    params:
+      action — attach/search/search_by_type/search_img/stats
+      memory_id — 关联的记忆 ID (attach)
+      file_path — 文件路径 (attach)
+      media_type — 媒体类型: image/audio/video/file/link (search_by_type)
+      query — 文本检索查询 (search img)
+      limit — 最大结果数
+      summary — 更新摘要 (update_summary)
+      attachment_id — 附件 ID (update_summary/delete)
+    """
+    mm = _get_multimodal()
+    action = p.get("action", "stats")
+    try:
+        if action == "attach":
+            result = mm.attach_media(
+                memory_id=p.get("memory_id", ""),
+                file_path=p.get("file_path", ""),
+                media_type=p.get("media_type", ""),
+            )
+        elif action == "get":
+            attachment = mm.get_attachment(p.get("attachment_id", ""))
+            result = attachment.model_dump(mode="json") if attachment else {"error": "not found"}
+        elif action == "search":
+            result = [
+                a.model_dump(mode="json")
+                for a in mm.search_by_summary(
+                    query=p.get("query", ""),
+                    limit=p.get("limit", 10),
+                )
+            ]
+        elif action == "search_by_type":
+            result = [
+                a.model_dump(mode="json")
+                for a in mm.search_by_type(p.get("media_type", ""))
+            ]
+        elif action == "update_summary":
+            result = {"success": mm.update_summary(
+                attachment_id=p.get("attachment_id", ""),
+                summary=p.get("summary", ""),
+            )}
+        elif action == "delete":
+            result = {"success": mm.delete_attachment(p.get("attachment_id", ""))}
+        else:
+            result = mm.stats()
+    except Exception as e:
+        result = {"status": "error", "message": str(e)}
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+# ── 新功能: 自修复 ────────────────────────────────────────
+
+
+def _do_heal(p: dict) -> str:
+    """自修复记忆引擎 — 不一致性检测与自动修复。
+
+    params:
+      action — scan/heal_all/list/dismiss/stats
+      limit — 最大结果数 (list)
+      min_severity — 最低严重等级 (list)
+      inconsistency_id — 指定 ID (dismiss)
+    """
+    healer = _get_healer()
+    action = p.get("action", "stats")
+    try:
+        if action == "scan":
+            issues = healer.scan()
+            result = {
+                "found": len(issues),
+                "results": [i.to_dict() for i in issues],
+            }
+        elif action == "heal_all":
+            result = healer.heal_all()
+        elif action == "list":
+            issues = healer.list_inconsistencies(
+                severity=p.get("severity"),
+                limit=p.get("limit", 50),
+                include_healed=p.get("include_healed", False),
+            )
+            result = {
+                "found": len(issues),
+                "results": [i.to_dict() for i in issues],
+            }
+        elif action == "dismiss":
+            result = {"success": healer.dismiss(p.get("inconsistency_id", ""))}
+        else:
+            result = healer.stats()
+    except Exception as e:
+        result = {"status": "error", "message": str(e)}
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+# ── 新功能: 时间线回溯 ─────────────────────────────────────
+
+
+def _do_timeline(p: dict) -> str:
+    """时间线回溯 — 记忆演化图谱与因果追踪。
+
+    params:
+      action — trace/graph/forks/merges/rollback/stats/viz
+      memory_id — 追溯的记忆 ID (trace/rollback)
+      event_id — 事件 ID (rollback)
+      target_event_id — 回滚目标事件 (rollback)
+      max_events — 最大事件数 (graph/viz)
+      since — 起始时间 (forks/merges)
+      actor — 操作者 (rollback)
+      format — 格式: d3/dot/json (viz)
+    """
+    tg = _get_temporal()
+    action = p.get("action", "stats")
+    try:
+        if action == "trace":
+            result = [e.to_dict() for e in tg.timeline(
+                memory_id=p.get("memory_id", ""),
+                include_snapshots=p.get("include_snapshots", False),
+            )]
+        elif action == "graph":
+            result = tg.graph(
+                memory_id=p.get("memory_id"),
+                max_events=p.get("max_events", 200),
+            )
+        elif action == "forks":
+            result = tg.detect_forks(since=p.get("since"))
+        elif action == "merges":
+            result = tg.detect_merges(since=p.get("since"))
+        elif action == "rollback":
+            success = tg.rollback_to(
+                memory_id=p.get("memory_id", ""),
+                target_event_id=p.get("target_event_id", ""),
+                actor=p.get("actor", "user"),
+            )
+            result = {"status": "rolled_back" if success else "failed"}
+        elif action == "viz":
+            fmt = p.get("format", "d3")
+            if fmt == "dot":
+                result = {"format": "dot", "content": tg.graphviz()}
+            else:
+                result = tg.graph(max_events=p.get("max_events", 100))
+        else:
+            result = tg.stats()
+    except Exception as e:
+        result = {"status": "error", "message": str(e)}
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
 _ACTIONS = {
     "remember": _do_remember,
     "recall": _do_recall,
@@ -389,6 +619,10 @@ _ACTIONS = {
     "profile": _do_profile,
     "stage": _do_stage,
     "import": _do_import,
+    "sync": _do_sync,
+    "multimodal": _do_multimodal,
+    "heal": _do_heal,
+    "timeline": _do_timeline,
 }
 
 
@@ -408,6 +642,10 @@ def mnemos(action: str, params: str = "{}") -> str:
       profile   — 用户画像。params: scope_id
       stage     — 分层注入。params: query(必填), scope_type, scope_id, core_max, context_max
       import    — 批量导入记忆。params: memories(必填, 记忆列表[{content,title,scope_type,scope_id,tags,entities,related_to}]), dry_run(选填,默认false)
+      sync      — 分布式同步。params: action(push/pull/merge/resolve/conflicts/status), remote_db, strategy, scope_type, scope_id, conflict_id, resolution
+      multimodal — 多模态记忆。params: action(attach/get/search/search_by_type/update_summary/delete/stats), file_path, media_type, query, memory_id, attachment_id, summary
+      heal      — 自修复。params: action(scan/heal_all/list/dismiss/stats), limit, severity, include_healed
+      timeline  — 时间线回溯。params: action(record/timeline/graph/forks/merges/rollback/dot/stats), memory_id, event_type, tier, before, after, changed_fields, parent_event, actor, summary, since, target_event_id, max_events
 
     params — JSON 字符串，传递给对应 action 的参数。
 
@@ -417,6 +655,10 @@ def mnemos(action: str, params: str = "{}") -> str:
       mnemos(action="stats")
       mnemos(action="profile")
       mnemos(action="import", params='{"memories":[{"content":"用户喜欢Python","title":"偏好","tags":["preference"]}]}')
+      mnemos(action="sync", params='{"action":"status"}')
+      mnemos(action="sync", params='{"action":"pull","remote_db":"/path/to/remote.db"}')
+      mnemos(action="heal", params='{"action":"scan"}')
+      mnemos(action="timeline", params='{"action":"graph","memory_id":"xxx","max_events":50}')
     """
     handler = _ACTIONS.get(action)
     if not handler:
