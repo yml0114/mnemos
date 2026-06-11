@@ -655,7 +655,7 @@ class HealerEngine:
     def _mark_healed(self, inconsistency_id: str) -> None:
         self._store.db.execute(
             "UPDATE inconsistency_log SET auto_healed=1, auto_fix_applied=1 "
-            "WHERE inconsistency_id=?",
+            "WHERE issue_id=?",
             (inconsistency_id,),
         )
         self._store.db.commit()
@@ -677,7 +677,7 @@ class HealerEngine:
             conditions.append("severity=?")
             params.append(severity)
         if inconsistency_type:
-            conditions.append("inconsistency_type=?")
+            conditions.append("issue_type=?")
             params.append(inconsistency_type)
         if not include_healed:
             conditions.append("auto_healed=0")
@@ -700,8 +700,8 @@ class HealerEngine:
         ).fetchone()[0]
 
         by_type = self._store.db.execute(
-            "SELECT inconsistency_type, COUNT(*) as cnt "
-            "FROM inconsistency_log GROUP BY inconsistency_type"
+            "SELECT issue_type, COUNT(*) as cnt "
+            "FROM inconsistency_log GROUP BY issue_type"
         ).fetchall()
 
         by_severity = self._store.db.execute(
@@ -717,7 +717,7 @@ class HealerEngine:
             "total": total,
             "healed": healed,
             "unhealed": total - healed,
-            "by_type": {r["inconsistency_type"]: r["cnt"] for r in by_type},
+            "by_type": {r["issue_type"]: r["cnt"] for r in by_type},
             "by_severity": {r["severity"]: r["cnt"] for r in by_severity},
         }
 
@@ -726,7 +726,7 @@ class HealerEngine:
     def dismiss(self, inconsistency_id: str) -> bool:
         """标记一条不一致记录为已忽略"""
         cur = self._store.db.execute(
-            "UPDATE inconsistency_log SET dismissed=1 WHERE inconsistency_id=?",
+            "UPDATE inconsistency_log SET dismissed=1 WHERE issue_id=?",
             (inconsistency_id,),
         )
         self._store.db.commit()
@@ -803,10 +803,10 @@ class HealerEngine:
         """持久化一条不一致记录到 inconsistency_log"""
         self._store.db.execute(
             """INSERT OR IGNORE INTO inconsistency_log
-               (inconsistency_id, entry_id_a, entry_id_b,
-                inconsistency_type, severity, description,
-                detail_json, auto_healed, suggested_fix,
-                created_at)
+               (issue_id, memory_id_a, memory_id_b,
+                issue_type, severity, description,
+                metadata, auto_healed, suggested_fix,
+                detected_at)
                VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 inc.inconsistency_id,
@@ -825,14 +825,14 @@ class HealerEngine:
 
     def _row_to_inconsistency(self, row: dict[str, Any]) -> Inconsistency:
         return Inconsistency(
-            inconsistency_id=row["inconsistency_id"],
-            entry_id_a=row.get("entry_id_a"),
-            entry_id_b=row.get("entry_id_b"),
-            inconsistency_type=row["inconsistency_type"],
+            inconsistency_id=row["issue_id"],
+            entry_id_a=row.get("memory_id_a"),
+            entry_id_b=row.get("memory_id_b"),
+            inconsistency_type=row["issue_type"],
             severity=row.get("severity", Severity.WARNING),
             description=row.get("description", ""),
-            detail=json.loads(row.get("detail_json", "{}")),
+            detail=json.loads(row.get("metadata", "{}")),
             auto_healed=bool(row.get("auto_healed", 0)),
             suggested_fix=row.get("suggested_fix"),
-            created_at=row.get("created_at"),
+            created_at=row.get("detected_at"),
         )

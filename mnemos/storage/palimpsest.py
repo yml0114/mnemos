@@ -186,7 +186,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS impression_fts USING fts5(
     content,
     content='impressions',
     content_rowid='rowid',
-    tokenize='unicode61'
+    tokenize='trigram'
 );
 """
 
@@ -337,6 +337,83 @@ ALL_SCHEMA = "\n".join([
     _CREATE_MEDIA_ATTACHMENTS, _CREATE_MEDIA_EMBEDDINGS,
     _CREATE_INCONSISTENCY_LOG,
     _CREATE_TEMPORAL_EVENTS, _CREATE_TEMPORAL_GRAPH,
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        last_message_id TEXT,
+        metadata TEXT NOT NULL DEFAULT '{}'
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
+        agent_id TEXT NOT NULL DEFAULT '',
+        tokens INTEGER NOT NULL DEFAULT 0,
+        finish_reason TEXT,
+        time_created TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS parts (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK(type IN ('text','reasoning','tool_input','tool_output','tool_error')),
+        content TEXT NOT NULL,
+        metadata TEXT NOT NULL DEFAULT '{}'
+    );
+    """,
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS conversation_fts USING fts5(
+        part_id UNINDEXED,
+        message_id UNINDEXED,
+        session_id UNINDEXED,
+        content,
+        tokenize='trigram'
+    );
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS conversation_fts_ins AFTER INSERT ON parts BEGIN
+        INSERT INTO conversation_fts(rowid, part_id, message_id, session_id, content)
+        VALUES (new.rowid, new.id, new.message_id, 
+                (SELECT session_id FROM messages WHERE id = new.message_id), 
+                new.content);
+    END;
+    CREATE TRIGGER IF NOT EXISTS conversation_fts_upd AFTER UPDATE ON parts BEGIN
+        INSERT INTO conversation_fts(conversation_fts, rowid, part_id, message_id, session_id, content)
+        VALUES ('delete', old.rowid, old.id, old.message_id, 
+                (SELECT session_id FROM messages WHERE id = old.message_id), 
+                old.content);
+        INSERT INTO conversation_fts(rowid, part_id, message_id, session_id, content)
+        VALUES (new.rowid, new.id, new.message_id,
+                (SELECT session_id FROM messages WHERE id = new.message_id),
+                new.content);
+    END;
+    CREATE TRIGGER IF NOT EXISTS conversation_fts_del AFTER DELETE ON parts BEGIN
+        INSERT INTO conversation_fts(conversation_fts, rowid, part_id, message_id, session_id, content)
+        VALUES ('delete', old.rowid, old.id, old.message_id,
+                (SELECT session_id FROM messages WHERE id = old.message_id),
+                old.content);
+    END;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS message_entities (
+        part_id TEXT NOT NULL REFERENCES parts(id) ON DELETE CASCADE,
+        entity_id TEXT NOT NULL,
+        relevance REAL NOT NULL DEFAULT 0.0,
+        PRIMARY KEY(part_id, entity_id)
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_msg_session ON messages(session_id);
+    CREATE INDEX IF NOT EXISTS idx_msg_agent ON messages(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_part_message ON parts(message_id);
+    CREATE INDEX IF NOT EXISTS idx_part_type ON parts(type);
+    CREATE INDEX IF NOT EXISTS idx_msg_ent_entity ON message_entities(entity_id);
+    """,
 ])
 
 
@@ -702,6 +779,188 @@ class PalimpsestStore:
             total += c.rowcount
         self.db.commit()
         return total
+
+    # ── 会话历史 (MiMo 融合) ──────────────────────────────
+
+    def create_session(self, project_id: str, metadata: dict | None = None) -> str:
+        """创建新会话，返回 session_id"""
+        import uuid
+        session_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        meta = json.dumps(metadata or {})
+        self.db.execute(
+            """INSERT INTO sessions (id, project_id, created_at, last_message_id, metadata)
+               VALUES (?, ?, ?, ?, ?)""",
+            (session_id, project_id, now, None, meta)
+        )
+        self.db.commit()
+        return session_id
+
+    def get_session(self, session_id: str) -> dict | None:
+        row = self.db.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_sessions(self, project_id: str | None = None, limit: int = 50) -> list[dict]:
+        if project_id:
+            rows = self.db.execute(
+                "SELECT * FROM sessions WHERE project_id=? ORDER BY created_at DESC LIMIT ?",
+                (project_id, limit)
+            ).fetchall()
+        else:
+            rows = self.db.execute(
+                "SELECT * FROM sessions ORDER BY created_at DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def append_message(self, session_id: str, role: str, agent_id: str,
+                       parts: list[dict], tokens: int = 0, finish_reason: str | None = None) -> str:
+        """向会话追加消息（原子：插入消息+parts+更新会话last）"""
+        import uuid
+        message_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        # Insert message
+        self.db.execute(
+            """INSERT INTO messages (id, session_id, role, agent_id, tokens, finish_reason, time_created)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (message_id, session_id, role, agent_id, tokens, finish_reason, now)
+        )
+        # Insert parts
+        for part in parts:
+            part_id = str(uuid.uuid4())
+            self.db.execute(
+                """INSERT INTO parts (id, message_id, type, content, metadata)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (part_id, message_id, part['type'], part['content'], json.dumps(part.get('metadata', {})))
+            )
+        # Update session's last_message_id
+        self.db.execute(
+            "UPDATE sessions SET last_message_id=? WHERE id=?", (message_id, session_id)
+        )
+        self.db.commit()
+        return message_id
+
+    def get_message(self, message_id: str) -> dict | None:
+        row = self.db.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not row:
+            return None
+        msg = dict(row)
+        parts = self.db.execute("SELECT * FROM parts WHERE message_id=?", (message_id,)).fetchall()
+        msg['parts'] = [dict(p) for p in parts]
+        return msg
+
+    def list_messages(self, session_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT * FROM messages 
+               WHERE session_id=? 
+               ORDER BY time_created ASC 
+               LIMIT ? OFFSET ?""",
+            (session_id, limit, offset)
+        ).fetchall()
+        result = []
+        for r in rows:
+            msg = dict(r)
+            parts = self.db.execute("SELECT * FROM parts WHERE message_id=?", (msg['id'],)).fetchall()
+            msg['parts'] = [dict(p) for p in parts]
+            result.append(msg)
+        return result
+
+    def conversation_search(self, query: str, session_id: str | None = None,
+                           scope: str = 'project', project_id: str | None = None,
+                           kind: str | None = None, tool_name: str | None = None,
+                           time_after: str | None = None, time_before: str | None = None,
+                           limit: int = 50) -> list[dict]:
+        """FTS5 搜索对话片段，返回 BM25 评分 + 高亮"""
+        safe_query = self._sanitize_fts5(query) if hasattr(self, '_sanitize_fts5') else query
+        params = []
+        where = ["conversation_fts MATCH ?"]
+        params.append(safe_query)
+
+        if session_id:
+            where.append("conversation_fts.session_id = ?")
+            params.append(session_id)
+        elif scope == 'project' and project_id:
+            where.append("conversation_fts.session_id IN (SELECT id FROM sessions WHERE project_id = ?)")
+            params.append(project_id)
+
+        sql = """
+            SELECT 
+                f.part_id,
+                f.message_id,
+                f.session_id,
+                p.type AS kind,
+                m.agent_id,
+                snippet(conversation_fts, 3, '<<', '>>', '...', 32) AS snippet,
+                bm25(conversation_fts) AS score,
+                m.time_created
+            FROM conversation_fts f
+            JOIN parts p ON f.part_id = p.id
+            JOIN messages m ON f.message_id = m.id
+            WHERE """ + " AND ".join(where) + """
+            ORDER BY score
+            LIMIT ?
+        """
+        params.append(limit)
+        rows = self.db.execute(sql, params).fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            d['score'] = -d['score']  # 正向分数
+            results.append(d)
+        return results
+
+    def around_message(self, message_id: str, before: int = 5, after: int = 5) -> list[dict]:
+        """获取消息的前后上下文（包含完整消息）"""
+        msg = self.db.execute(
+            "SELECT session_id, time_created FROM messages WHERE id=?", (message_id,)
+        ).fetchone()
+        if not msg:
+            return []
+        session_id = msg['session_id']
+        target_time = msg['time_created']
+
+        before_rows = self.db.execute(
+            """SELECT * FROM messages 
+               WHERE session_id=? AND time_created < ? 
+               ORDER BY time_created DESC LIMIT ?""",
+            (session_id, target_time, before)
+        ).fetchall()
+        after_rows = self.db.execute(
+            """SELECT * FROM messages 
+               WHERE session_id=? AND time_created > ? 
+               ORDER BY time_created ASC LIMIT ?""",
+            (session_id, target_time, after)
+        ).fetchall()
+        # 组合：前段反序 + 当前 + 后段
+        all_msgs = list(reversed([dict(r) for r in before_rows])) + [dict(self.db.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone())] + [dict(r) for r in after_rows]
+        # 加载每个消息的 parts
+        for m in all_msgs:
+            parts = self.db.execute("SELECT * FROM parts WHERE message_id=?", (m['id'],)).fetchall()
+            m['parts'] = [dict(p) for p in parts]
+        return all_msgs
+
+    def link_message_entities(self, part_id: str, entity_id: str, relevance: float = 0.0) -> None:
+        """关联 part 与实体（用于后续图谱检索）"""
+        self.db.execute(
+            """INSERT OR REPLACE INTO message_entities (part_id, entity_id, relevance)
+               VALUES (?, ?, ?)""",
+            (part_id, entity_id, relevance)
+        )
+        self.db.commit()
+
+    def get_entity_mentions(self, entity_id: str, limit: int = 50) -> list[dict]:
+        """查询实体出现的片段（含消息上下文）"""
+        rows = self.db.execute(
+            """SELECT p.id as part_id, p.message_id, p.content, m.session_id
+               FROM message_entities me
+               JOIN parts p ON me.part_id = p.id
+               JOIN messages m ON p.message_id = m.id
+               WHERE me.entity_id = ?
+               ORDER BY me.relevance DESC
+               LIMIT ?""",
+            (entity_id, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     # ── 嵌入向量持久化 ──────────────────────────────
 

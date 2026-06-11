@@ -607,6 +607,78 @@ def _do_timeline(p: dict) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
+
+def _do_conversation_append(p: dict) -> str:
+    """追加会话消息。创建会话（如果不存在）并追加一条消息（含多个片段）。
+
+    params:
+      session_id — 会话标识（同一任务使用相同 ID）
+      role — 消息角色: user/assistant/tool
+      agent_id — 代理标识（可为空）
+      parts — 片段列表，每项: {content, media_type, tokens, metadata{}}
+      tokens — 消息总 token 数（可选）
+      finish_reason — 结束原因（可选）
+    """
+    session_id = p["session_id"]
+    role = p["role"]
+    agent_id = p.get("agent_id", "")
+    parts = p["parts"]
+    tokens = p.get("tokens", 0)
+    finish_reason = p.get("finish_reason")
+
+    store = _get_store()
+    msg_id = store.append_message(
+        session_id=session_id,
+        role=role,
+        agent_id=agent_id,
+        parts=parts,
+        tokens=tokens,
+        finish_reason=finish_reason,
+    )
+    return json.dumps({"status": "appended", "message_id": msg_id}, ensure_ascii=False)
+
+def _do_conversation_search(p: dict) -> str:
+    """全文搜索会话片段。基于 FTS5 实现，支持短语匹配、BM25 排序。
+
+    params:
+      query — 搜索语句（必需）
+      scope — 搜索范围: project/session（默认 project）
+      project_id — 项目标识（当 scope=project 时）
+      session_id — 会话标识（当 scope=session 时）
+      limit — 最大返回数（默认 50）
+    """
+    query = p["query"]
+    scope = p.get("scope", "project")
+    project_id = p.get("project_id")
+    session_id = p.get("session_id")
+    limit = p.get("limit", 50)
+
+    store = _get_store()
+    hits = store.conversation_search(
+        query=query,
+        scope=scope,
+        project_id=project_id,
+        session_id=session_id,
+        limit=limit,
+    )
+    return json.dumps({"status": "ok", "hits": hits}, ensure_ascii=False)
+
+def _do_link_message_entities(p: dict) -> str:
+    """将会话片段与实体图谱关联。
+
+    params:
+      part_id — 片段标识
+      entity_id — 实体标识
+      relevance — 相关度（可选，默认 0.0）
+    """
+    part_id = p["part_id"]
+    entity_id = p["entity_id"]
+    relevance = p.get("relevance", 0.0)
+
+    store = _get_store()
+    store.link_message_entities(part_id, entity_id, relevance)
+    return json.dumps({"status": "linked"}, ensure_ascii=False)
+
 _ACTIONS = {
     "remember": _do_remember,
     "recall": _do_recall,
@@ -623,6 +695,9 @@ _ACTIONS = {
     "multimodal": _do_multimodal,
     "heal": _do_heal,
     "timeline": _do_timeline,
+    "conversation_append": _do_conversation_append,
+    "conversation_search": _do_conversation_search,
+    "link_message_entities": _do_link_message_entities,
 }
 
 

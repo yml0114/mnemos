@@ -1,0 +1,44 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (mounted as volume)
+*.db
+*.sqlite
+
+# Build
+dist/
+build/
+*.whl
+
+# Env
+.env
+.env.local
+
+# Other
+node_modules/
+coverage/
+htmlcov/
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
