@@ -679,6 +679,100 @@ def _do_link_message_entities(p: dict) -> str:
     store.link_message_entities(part_id, entity_id, relevance)
     return json.dumps({"status": "linked"}, ensure_ascii=False)
 
+
+def _do_auto_condense(p: dict) -> str:
+    """自动凝练：对话满 N 轮 → LLM 摘要 → 写入永久记忆。
+
+    params:
+      session_id — 会话 ID（必填）
+      threshold  — 保留最近 N 条消息不凝练（默认 20）
+      llm_prompt — 可选，自定义摘要提示词
+    """
+    session_id = p["session_id"]
+    threshold = p.get("threshold", 20)
+
+    store = _get_store()
+
+    # 构造 LLM 回调（使用 LLM API 或降级为截断）
+    def llm_fn(prompt: str) -> str:
+        # 尝试通过环境变量的 LLM API 调用
+        import os
+        api_url = os.environ.get("MNEMOS_LLM_API_URL", "")
+        api_key = os.environ.get("MNEMOS_LLM_API_KEY", "")
+        model = os.environ.get("MNEMOS_LLM_MODEL", "gpt-4o-mini")
+
+        if not api_url:
+            # 无 LLM 配置，降级为截断摘要
+            lines = prompt.split('\n')
+            # 取对话内容的前 500 字符
+            content_start = False
+            summary_parts = []
+            for line in lines:
+                if line.startswith('[') and ']:' in line:
+                    content_start = True
+                if content_start and line.strip():
+                    summary_parts.append(line[:200])
+                if len('\n'.join(summary_parts)) > 500:
+                    break
+            return "（无 LLM 配置，降级为截断摘要）\n" + '\n'.join(summary_parts)
+
+        # 调用 LLM API
+        import urllib.request
+        import json as _json
+
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        body = _json.dumps({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1000,
+            "temperature": 0.3,
+        }).encode()
+
+        req = urllib.request.Request(api_url, data=body, headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = _json.loads(resp.read())
+            return data["choices"][0]["message"]["content"]
+
+    result = store.auto_condense(session_id, llm_fn, threshold)
+    if result is None:
+        return json.dumps({"status": "no_op", "reason": "未达到凝练阈值"}, ensure_ascii=False)
+    return json.dumps({"status": "condensed", **result}, ensure_ascii=False, indent=2)
+
+
+def _do_get_full_context(p: dict) -> str:
+    """获取完整上下文 = 凝练摘要 + 最近 N 条原始消息 + FTS5 相关片段。
+
+    这是"无限上下文"的查询入口。
+
+    params:
+      session_id    — 会话 ID（必填）
+      recent_n      — 保留最近 N 条原始消息（默认 20）
+      search_query  — 可选，FTS5 搜索关键词
+      search_limit  — 搜索结果上限（默认 10）
+    """
+    session_id = p["session_id"]
+    recent_n = p.get("recent_n", 20)
+    search_query = p.get("search_query")
+    search_limit = p.get("search_limit", 10)
+
+    store = _get_store()
+    ctx = store.get_full_context(session_id, recent_n, search_query, search_limit)
+
+    # 截断长内容避免 MCP 响应过大
+    for c in ctx.get("condensations", []):
+        if len(c.get("summary", "")) > 500:
+            c["summary"] = c["summary"][:500] + "..."
+    for m in ctx.get("recent_messages", []):
+        for p_part in m.get("parts", []):
+            if len(p_part.get("content", "")) > 1000:
+                p_part["content"] = p_part["content"][:1000] + "..."
+
+    return json.dumps(ctx, ensure_ascii=False, indent=2)
+
+
 _ACTIONS = {
     "remember": _do_remember,
     "recall": _do_recall,
@@ -698,6 +792,8 @@ _ACTIONS = {
     "conversation_append": _do_conversation_append,
     "conversation_search": _do_conversation_search,
     "link_message_entities": _do_link_message_entities,
+    "auto_condense": _do_auto_condense,
+    "get_full_context": _do_get_full_context,
 }
 
 
@@ -721,6 +817,10 @@ def mnemos(action: str, params: str = "{}") -> str:
       multimodal — 多模态记忆。params: action(attach/get/search/search_by_type/update_summary/delete/stats), file_path, media_type, query, memory_id, attachment_id, summary
       heal      — 自修复。params: action(scan/heal_all/list/dismiss/stats), limit, severity, include_healed
       timeline  — 时间线回溯。params: action(record/timeline/graph/forks/merges/rollback/dot/stats), memory_id, event_type, tier, before, after, changed_fields, parent_event, actor, summary, since, target_event_id, max_events
+      conversation_append — 追加会话消息。params: session_id(必填), role(必填), content(必填), agent_id, finish_reason, metadata
+      conversation_search — FTS5 对话全文搜索。params: query(必填), session_id, project_id, limit
+      auto_condense — 自动凝练（无限上下文核心）。params: session_id(必填), threshold(默认20)
+      get_full_context — 获取完整上下文（凝练摘要+最近消息+FTS5片段）。params: session_id(必填), recent_n(默认20), search_query, search_limit
 
     params — JSON 字符串，传递给对应 action 的参数。
 

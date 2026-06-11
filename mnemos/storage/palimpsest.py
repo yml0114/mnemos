@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator
@@ -343,6 +344,7 @@ ALL_SCHEMA = "\n".join([
         project_id TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL,
         last_message_id TEXT,
+        condensed_up_to TEXT,
         metadata TEXT NOT NULL DEFAULT '{}'
     );
     """,
@@ -398,6 +400,21 @@ ALL_SCHEMA = "\n".join([
                 (SELECT session_id FROM messages WHERE id = old.message_id),
                 old.content);
     END;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS condensations (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        message_count INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        impression_id TEXT,
+        created_at TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_cond_session ON condensations(session_id);
     """,
     """
     CREATE TABLE IF NOT EXISTS message_entities (
@@ -877,10 +894,10 @@ class PalimpsestStore:
         params.append(safe_query)
 
         if session_id:
-            where.append("conversation_fts.session_id = ?")
+            where.append("f.session_id = ?")
             params.append(session_id)
         elif scope == 'project' and project_id:
-            where.append("conversation_fts.session_id IN (SELECT id FROM sessions WHERE project_id = ?)")
+            where.append("f.session_id IN (SELECT id FROM sessions WHERE project_id = ?)")
             params.append(project_id)
 
         sql = """
@@ -961,6 +978,192 @@ class PalimpsestStore:
             (entity_id, limit)
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── 自动凝练（无限上下文核心）──────────────────────────
+
+    def get_uncompacted_messages(self, session_id: str, threshold: int = 20) -> list[dict]:
+        """获取未凝练的消息（超过 threshold 条的旧消息需要凝练）"""
+        # 获取上次凝练的截止时间
+        session = self.db.execute(
+            "SELECT condensed_up_to FROM sessions WHERE id=?", (session_id,)
+        ).fetchone()
+        if not session:
+            return []
+        condensed_up_to = session['condensed_up_to']
+
+        if condensed_up_to:
+            rows = self.db.execute(
+                """SELECT * FROM messages 
+                   WHERE session_id=? AND time_created <= ?
+                   ORDER BY time_created ASC""",
+                (session_id, condensed_up_to)
+            ).fetchall()
+        else:
+            # 从未凝练过，取全部消息
+            rows = self.db.execute(
+                "SELECT * FROM messages WHERE session_id=? ORDER BY time_created ASC",
+                (session_id,)
+            ).fetchall()
+
+        # 只有当总数 > threshold 时才需要凝练
+        total = self.db.execute(
+            "SELECT COUNT(*) as c FROM messages WHERE session_id=?", (session_id,)
+        ).fetchone()['c']
+
+        if total <= threshold:
+            return []
+
+        # 需要凝练的消息数 = 总数 - threshold（保留最近 threshold 条）
+        to_condense_count = total - threshold
+        # 取出要凝练的消息（最旧的）
+        messages = []
+        for r in rows[:to_condense_count]:
+            msg = dict(r)
+            parts = self.db.execute(
+                "SELECT * FROM parts WHERE message_id=?", (msg['id'],)
+            ).fetchall()
+            msg['parts'] = [dict(p) for p in parts]
+            messages.append(msg)
+        return messages
+
+    def auto_condense(self, session_id: str, llm_fn, threshold: int = 20) -> dict | None:
+        """
+        自动凝练：对话满 threshold 轮 → LLM 摘要 → 写入永久记忆。
+
+        Args:
+            session_id: 会话 ID
+            llm_fn: 回调函数 llm_fn(prompt: str) -> str，接收摘要请求，返回摘要文本
+            threshold: 保留最近 N 条消息不凝练
+
+        Returns:
+            凝练记录 dict，或 None（未达到阈值）
+        """
+        messages = self.get_uncompacted_messages(session_id, threshold)
+        if not messages:
+            return None
+
+        # 构造摘要请求
+        conversation_text = []
+        for msg in messages:
+            role = msg['role']
+            parts_text = []
+            for p in msg.get('parts', []):
+                parts_text.append(p['content'])
+            content = '\n'.join(parts_text)
+            if content.strip():
+                conversation_text.append(f"[{role}]: {content}")
+
+        if not conversation_text:
+            return None
+
+        prompt = (
+            "请将以下对话压缩为简洁摘要，保留关键事实、决策、用户偏好和重要上下文。"
+            "不要遗漏任何对后续对话有价值的信息。\n\n"
+            f"对话内容（{len(messages)} 条消息）：\n"
+            + '\n'.join(conversation_text)
+        )
+
+        # 调用 LLM 生成摘要
+        try:
+            summary = llm_fn(prompt)
+        except Exception as e:
+            # LLM 调用失败时降级：用前 3 条消息的首行拼接
+            summary = "（LLM 摘要失败，降级为截断）\n"
+            for msg in messages[:3]:
+                for p in msg.get('parts', []):
+                    if p['type'] == 'text':
+                        summary += p['content'][:200] + "\n"
+                        break
+
+        # 写入永久记忆（impression）
+        impression_id = uuid.uuid4().hex[:16]
+        now = datetime.now(timezone.utc).isoformat()
+
+        entry = MemoryEntry(
+            entry_id=impression_id,
+            tier=MemoryTier.IMPRESSION,
+            content=summary,
+            title=f"会话凝练: {session_id[:8]}",
+            scope=ScopeType.TENANT,
+            tags=["condensation", "auto", f"session:{session_id}"],
+            entities=[],
+        )
+        self.inscribe(entry)
+
+        # 记录凝练记录
+        condensation_id = str(uuid.uuid4())
+        start_time = messages[0]['time_created']
+        end_time = messages[-1]['time_created']
+
+        self.db.execute(
+            """INSERT INTO condensations (id, session_id, start_time, end_time, 
+               message_count, summary, impression_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (condensation_id, session_id, start_time, end_time,
+             len(messages), summary, impression_id, now)
+        )
+
+        # 更新 session 的凝练截止时间
+        self.db.execute(
+            "UPDATE sessions SET condensed_up_to=? WHERE id=?",
+            (end_time, session_id)
+        )
+        self.db.commit()
+
+        return {
+            'id': condensation_id,
+            'session_id': session_id,
+            'message_count': len(messages),
+            'impression_id': impression_id,
+            'summary_preview': summary[:200],
+        }
+
+    def get_condensed_history(self, session_id: str) -> list[dict]:
+        """获取会话的所有凝练记录"""
+        rows = self.db.execute(
+            """SELECT * FROM condensations 
+               WHERE session_id=? ORDER BY start_time ASC""",
+            (session_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_full_context(self, session_id: str, recent_n: int = 20,
+                         search_query: str | None = None, search_limit: int = 10) -> dict:
+        """
+        获取完整上下文 = 凝练摘要 + 最近 N 条原始消息 + FTS5 相关片段。
+        这就是"无限上下文"的查询入口。
+        """
+        # 1. 凝练摘要
+        condensations = self.get_condensed_history(session_id)
+
+        # 2. 最近 N 条消息（原始）
+        recent = self.db.execute(
+            """SELECT * FROM messages 
+               WHERE session_id=? 
+               ORDER BY time_created DESC LIMIT ?""",
+            (session_id, recent_n)
+        ).fetchall()
+        recent_msgs = []
+        for r in reversed(recent):
+            msg = dict(r)
+            parts = self.db.execute(
+                "SELECT * FROM parts WHERE message_id=?", (msg['id'],)
+            ).fetchall()
+            msg['parts'] = [dict(p) for p in parts]
+            recent_msgs.append(msg)
+
+        # 3. FTS5 相关片段（如果有查询）
+        related = []
+        if search_query:
+            related = self.conversation_search(
+                search_query, session_id=session_id, limit=search_limit
+            )
+
+        return {
+            'condensations': condensations,
+            'recent_messages': recent_msgs,
+            'related_snippets': related,
+        }
 
     # ── 嵌入向量持久化 ──────────────────────────────
 
