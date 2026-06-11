@@ -196,9 +196,9 @@ class DashboardProvider:
             ).fetchall()
             meta = {r["label"]: {"type": r["etype"], "memory_count": r["mem_count"]} for r in meta_rows}
 
-            nodes = [{"id": l, "label": l, "type": meta.get(l, {}).get("type", "concept"),
-                       "memory_count": meta.get(l, {}).get("memory_count", 0)}
-                      for l in node_set]
+            nodes = [{"id": node_id, "label": node_id, "type": meta.get(node_id, {}).get("type", "concept"),
+                       "memory_count": meta.get(node_id, {}).get("memory_count", 0)}
+                      for node_id in node_set]
             return {"center": center_label, "nodes": nodes, "edges": edge_list,
                     "total_nodes": len(nodes), "total_edges": len(edge_list)}
 
@@ -229,9 +229,9 @@ class DashboardProvider:
         else:
             entity_meta = {}
 
-        nodes = [{"id": l, "label": l, "type": entity_meta.get(l, {}).get("type", "concept"),
-                   "memory_count": entity_meta.get(l, {}).get("memory_count", 0)}
-                  for l in nodes_set]
+        nodes = [{"id": node_id, "label": node_id, "type": entity_meta.get(node_id, {}).get("type", "concept"),
+                   "memory_count": entity_meta.get(node_id, {}).get("memory_count", 0)}
+                  for node_id in nodes_set]
 
         return {"nodes": nodes, "edges": edges, "total_nodes": len(nodes), "total_edges": len(edges)}
 

@@ -402,7 +402,7 @@ def _do_import(p: dict) -> str:
             if dry_run:
                 results["imported"] += 1
             else:
-                entry_id = store.inscribe(entry)
+                store.inscribe(entry)
                 results["imported"] += 1
 
         except Exception as e:

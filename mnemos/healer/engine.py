@@ -764,8 +764,8 @@ class HealerEngine:
                     return t[len(prefix):]
             return t
 
-        words_a = set(text_a.split())
-        words_b = set(text_b.split())
+        set(text_a.split())
+        set(text_b.split())
 
         # 检查否定词对
         for pos, neg in negation_pairs:

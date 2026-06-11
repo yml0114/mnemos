@@ -10,9 +10,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
-from mnemos.core.models import MemoryEntry, MemoryTier, ScopeType
+from mnemos.core.models import MemoryEntry as MemoryEntry, MemoryTier as MemoryTier, ScopeType
 from mnemos.storage.palimpsest import PalimpsestStore
 
 

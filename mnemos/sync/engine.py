@@ -210,14 +210,14 @@ class SyncEngine:
 
         if scope_type and scope_id:
             # 需要通过 tier 表查询 scope
-            placeholders = ",".join("?" * len(self.SYNC_TABLES))
+            ",".join("?" * len(self.SYNC_TABLES))
             query += (
                 f" AND memory_id IN ("
                 f"  SELECT entry_id FROM ({' UNION '.join([f'SELECT entry_id, scope_type, scope_id FROM {t}' for t in self.SYNC_TABLES])})"
                 f")"
             )
             # 简化：通过 tier 表查询
-            scope_filter = " OR ".join(
+            " OR ".join(
                 [f"(tier=? AND memory_id IN (SELECT entry_id FROM {t} WHERE scope_type=? AND scope_id=?))" for t in self.SYNC_TABLES]
             )
             # 重写查询
@@ -245,7 +245,7 @@ class SyncEngine:
         operation = change["operation"]
         tier = change["tier"]
         payload = json.loads(change["payload"]) if change["payload"] else {}
-        remote_node = change["node_id"]
+        change["node_id"]
         remote_vc = _parse_vector_clock(change.get("vector_clock", "{}"))
 
         # 检查本地是否也有未同步的变更
@@ -316,7 +316,7 @@ class SyncEngine:
         )
 
         tier_enum = MemoryTier(tier)
-        now = _now()
+        _now()
 
         # 从 payload 构建 MemoryEntry
         entry = MemoryEntry(
@@ -560,7 +560,7 @@ class SyncEngine:
         operation = conflict["operation"]
         tier = conflict["tier"]
         payload = json.loads(conflict["payload"]) if conflict["payload"] else {}
-        remote_node = conflict["node_id"]
+        conflict["node_id"]
 
         if resolution == self.STRATEGY_KEEP_REMOTE:
             # 应用远程版本

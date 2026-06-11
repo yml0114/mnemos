@@ -62,7 +62,7 @@ def run_evolve(
     # 5. Compression of old impressions
     compressed = 0
     if compression_age_days > 0:
-        cutoff = datetime.now() - timedelta(days=compression_age_days)
+        datetime.now() - timedelta(days=compression_age_days)
         # TODO: 对旧印象进行摘要压缩
         raise NotImplementedError("旧印象压缩暂未实现")
     results["steps"]["compression"] = {"compressed": compressed, "age_days": compression_age_days}

@@ -380,14 +380,14 @@ ALL_SCHEMA = "\n".join([
     """
     CREATE TRIGGER IF NOT EXISTS conversation_fts_ins AFTER INSERT ON parts BEGIN
         INSERT INTO conversation_fts(rowid, part_id, message_id, session_id, content)
-        VALUES (new.rowid, new.id, new.message_id, 
-                (SELECT session_id FROM messages WHERE id = new.message_id), 
+        VALUES (new.rowid, new.id, new.message_id,
+                (SELECT session_id FROM messages WHERE id = new.message_id),
                 new.content);
     END;
     CREATE TRIGGER IF NOT EXISTS conversation_fts_upd AFTER UPDATE ON parts BEGIN
         INSERT INTO conversation_fts(conversation_fts, rowid, part_id, message_id, session_id, content)
-        VALUES ('delete', old.rowid, old.id, old.message_id, 
-                (SELECT session_id FROM messages WHERE id = old.message_id), 
+        VALUES ('delete', old.rowid, old.id, old.message_id,
+                (SELECT session_id FROM messages WHERE id = old.message_id),
                 old.content);
         INSERT INTO conversation_fts(rowid, part_id, message_id, session_id, content)
         VALUES (new.rowid, new.id, new.message_id,
@@ -889,9 +889,9 @@ class PalimpsestStore:
 
     def list_messages(self, session_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
         rows = self.db.execute(
-            """SELECT * FROM messages 
-               WHERE session_id=? 
-               ORDER BY time_created ASC 
+            """SELECT * FROM messages
+               WHERE session_id=?
+               ORDER BY time_created ASC
                LIMIT ? OFFSET ?""",
             (session_id, limit, offset)
         ).fetchall()
@@ -922,7 +922,7 @@ class PalimpsestStore:
             params.append(project_id)
 
         sql = """
-            SELECT 
+            SELECT
                 f.part_id,
                 f.message_id,
                 f.session_id,
@@ -958,14 +958,14 @@ class PalimpsestStore:
         target_time = msg['time_created']
 
         before_rows = self.db.execute(
-            """SELECT * FROM messages 
-               WHERE session_id=? AND time_created < ? 
+            """SELECT * FROM messages
+               WHERE session_id=? AND time_created < ?
                ORDER BY time_created DESC LIMIT ?""",
             (session_id, target_time, before)
         ).fetchall()
         after_rows = self.db.execute(
-            """SELECT * FROM messages 
-               WHERE session_id=? AND time_created > ? 
+            """SELECT * FROM messages
+               WHERE session_id=? AND time_created > ?
                ORDER BY time_created ASC LIMIT ?""",
             (session_id, target_time, after)
         ).fetchall()
@@ -1016,7 +1016,7 @@ class PalimpsestStore:
 
         # 获取所有消息（按时间 ASC + ID ASC 保证稳定排序）
         all_rows = self.db.execute(
-            """SELECT * FROM messages 
+            """SELECT * FROM messages
                WHERE session_id=? ORDER BY time_created ASC, id ASC""",
             (session_id,)
         ).fetchall()
@@ -1120,7 +1120,7 @@ class PalimpsestStore:
         end_time = messages[-1]['time_created']
 
         self.db.execute(
-            """INSERT INTO condensations (id, session_id, start_time, end_time, 
+            """INSERT INTO condensations (id, session_id, start_time, end_time,
                message_count, summary, impression_id, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (condensation_id, session_id, start_time, end_time,
@@ -1145,7 +1145,7 @@ class PalimpsestStore:
     def get_condensed_history(self, session_id: str) -> list[dict]:
         """获取会话的所有凝练记录"""
         rows = self.db.execute(
-            """SELECT * FROM condensations 
+            """SELECT * FROM condensations
                WHERE session_id=? ORDER BY start_time ASC""",
             (session_id,)
         ).fetchall()
@@ -1162,8 +1162,8 @@ class PalimpsestStore:
 
         # 2. 最近 N 条消息（原始）
         recent = self.db.execute(
-            """SELECT * FROM messages 
-               WHERE session_id=? 
+            """SELECT * FROM messages
+               WHERE session_id=?
                ORDER BY time_created DESC LIMIT ?""",
             (session_id, recent_n)
         ).fetchall()

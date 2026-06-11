@@ -14,12 +14,12 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from mnemos.core.models import (
     MemoryEntry,
-    MemoryQuery,
+    MemoryQuery as MemoryQuery,
     MemoryType,
     SearchResult,
     TemporalQueryMode,

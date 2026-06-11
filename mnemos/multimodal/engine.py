@@ -277,7 +277,7 @@ class MultimodalEngine:
 
     def update_summary(self, attachment_id: str, summary: str) -> bool:
         """更新媒体附件的摘要"""
-        now = _now()
+        _now()
         row = self._store.db.execute(
             "SELECT metadata FROM media_attachments WHERE media_id=?",
             (attachment_id,),
