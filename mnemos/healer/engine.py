@@ -224,7 +224,7 @@ class HealerEngine:
                     severity=Severity.WARNING,
                     description=f"内容与 {r['entry_id'][:12]} 高度重复 ({overlap:.0%})",
                     detail={"overlap_ratio": overlap},
-                    suggested_fix=f"考虑合并或删除重复条目",
+                    suggested_fix="考虑合并或删除重复条目",
                 ))
                 break  # 一次只报一个最相似的
             elif overlap > 0.70:
@@ -759,7 +759,6 @@ class HealerEngine:
 
         # 去除 "不" 前缀提取核心词
         def core_verb(t: str) -> str:
-            import re
             for prefix in ["不", "没", "无", "非"]:
                 if t.startswith(prefix) and len(t) > 1:
                     return t[len(prefix):]

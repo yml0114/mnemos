@@ -309,7 +309,6 @@ class SyncEngine:
         """应用创建操作"""
         from mnemos.core.models import (
             BeliefRecord,
-            ConfidenceLevel,
             EntityRef,
             MemoryEntry,
             MemoryTier,

@@ -5,7 +5,6 @@ Context Source 注册表 — 管理源的生命周期与作用域
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Callable
 
 from .types import ContextSource, RegisteredSource

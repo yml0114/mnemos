@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional, List, Dict, Any
 
-from fastapi import Body, HTTPException, Query
+from fastapi import HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 

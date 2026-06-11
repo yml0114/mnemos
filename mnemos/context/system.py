@@ -20,7 +20,6 @@ from .types import (
     ContextEpoch,
     ContextSnapshot,
     MidConversationSystemMessage,
-    RegisteredSource,
 )
 
 

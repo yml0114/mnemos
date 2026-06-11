@@ -10,28 +10,24 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from mnemos.storage.palimpsest import PalimpsestStore
 from mnemos.retrieval.resonance import ResonanceEngine
 from mnemos.core.models import (
-    ConfidenceLevel,
     ContextScope,
     EntityRef,
     MemoryEntry,
     MemoryQuery,
     MemoryTier,
     ScopeType,
-    TemporalAnchor,
 )
 from mnemos.sync.engine import SyncEngine
 from mnemos.multimodal.engine import MultimodalEngine
 from mnemos.healer.engine import HealerEngine
 from mnemos.temporal_graph.engine import TemporalGraphEngine
-from mnemos.viz.data_provider import DashboardProvider
 
 try:
     from mnemos.viz.dashboard import _DASHBOARD_HTML
@@ -569,7 +565,6 @@ try:
 except ImportError:  # pragma: no cover
     SystemContextImpl = None  # type: ignore
 
-from typing import Any
 
 _context: SystemContextImpl | None = None
 

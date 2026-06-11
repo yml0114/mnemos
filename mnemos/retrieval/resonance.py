@@ -15,19 +15,14 @@
 
 from __future__ import annotations
 
-import math
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 import numpy as np
 
 from mnemos.core.models import (
-    MemoryEntry,
     MemoryQuery,
-    MemoryTier,
     SearchResult,
-    ScopeType,
 )
 from mnemos.embedding import get_hermes
 from mnemos.embedding.cache import EmbeddingCache

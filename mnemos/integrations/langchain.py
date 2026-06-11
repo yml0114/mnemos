@@ -18,7 +18,7 @@ from typing import Any
 from mnemos.core.models import MemoryEntry, MemoryQuery, ScopeType
 from mnemos.curation import Curator
 from mnemos.retrieval.resonance import ResonanceEngine
-from mnemos.retrieval.stager import Stager, InjectionPlan
+from mnemos.retrieval.stager import Stager
 from mnemos.storage.palimpsest import PalimpsestStore
 
 

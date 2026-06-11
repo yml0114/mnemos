@@ -26,7 +26,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 import numpy as np
 
@@ -222,7 +222,7 @@ CREATE INDEX IF NOT EXISTS idx_bel_mem     ON belief_log(memory_id);
 CREATE INDEX IF NOT EXISTS idx_edge_from   ON entity_edges(from_id);
 CREATE INDEX IF NOT EXISTS idx_edge_to     ON entity_edges(to_id);
 CREATE INDEX IF NOT EXISTS idx_edge_rel    ON entity_edges(relation);
-""";
+"""
 
 _CREATE_SYNC_LOG = """
 CREATE TABLE IF NOT EXISTS sync_log (
@@ -242,7 +242,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_mem   ON sync_log(memory_id);
 CREATE INDEX IF NOT EXISTS idx_sync_node  ON sync_log(node_id);
 CREATE INDEX IF NOT EXISTS idx_sync_stat  ON sync_log(sync_status);
 CREATE INDEX IF NOT EXISTS idx_sync_time  ON sync_log(created_at);
-""";
+"""
 
 _CREATE_MEDIA_ATTACHMENTS = """
 CREATE TABLE IF NOT EXISTS media_attachments (
@@ -258,7 +258,7 @@ CREATE TABLE IF NOT EXISTS media_attachments (
     FOREIGN KEY (memory_id) REFERENCES impressions(entry_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_media_mem ON media_attachments(memory_id);
-""";
+"""
 
 _CREATE_MEDIA_EMBEDDINGS = """
 CREATE TABLE IF NOT EXISTS media_embeddings (
@@ -272,7 +272,7 @@ CREATE TABLE IF NOT EXISTS media_embeddings (
     FOREIGN KEY (media_id) REFERENCES media_attachments(media_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_media_emb_mod ON media_embeddings(model);
-""";
+"""
 
 _CREATE_INCONSISTENCY_LOG = """
 CREATE TABLE IF NOT EXISTS inconsistency_log (
@@ -291,7 +291,7 @@ CREATE TABLE IF NOT EXISTS inconsistency_log (
 );
 CREATE INDEX IF NOT EXISTS idx_incon_res  ON inconsistency_log(resolution);
 CREATE INDEX IF NOT EXISTS idx_incon_type ON inconsistency_log(issue_type);
-""";
+"""
 
 _CREATE_TEMPORAL_EVENTS = """
 CREATE TABLE IF NOT EXISTS temporal_events (
@@ -311,7 +311,7 @@ CREATE TABLE IF NOT EXISTS temporal_events (
 CREATE INDEX IF NOT EXISTS idx_temp_ev_mem  ON temporal_events(memory_id);
 CREATE INDEX IF NOT EXISTS idx_temp_ev_type ON temporal_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_temp_ev_ts   ON temporal_events(timestamp);
-""";
+"""
 
 _CREATE_TEMPORAL_GRAPH = """
 CREATE TABLE IF NOT EXISTS temporal_graph_edges (
@@ -327,7 +327,7 @@ CREATE TABLE IF NOT EXISTS temporal_graph_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_tge_from ON temporal_graph_edges(from_event);
 CREATE INDEX IF NOT EXISTS idx_tge_to   ON temporal_graph_edges(to_event);
-""";
+"""
 
 ALL_SCHEMA = "\n".join([
     _CREATE_IMPRESSIONS, _CREATE_PATTERNS, _CREATE_PRINCIPLES,
@@ -1090,7 +1090,7 @@ class PalimpsestStore:
         # 调用 LLM 生成摘要
         try:
             summary = llm_fn(prompt)
-        except Exception as e:
+        except Exception:
             # LLM 调用失败时降级：用前 3 条消息的首行拼接
             summary = "（LLM 摘要失败，降级为截断）\n"
             for msg in messages[:3]:

@@ -11,7 +11,6 @@ from __future__ import annotations
 import sys
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 try:
     from typing import Self

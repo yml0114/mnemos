@@ -405,7 +405,7 @@ def main():
     DashboardHandler.provider = DashboardProvider(store)
 
     server = http.server.HTTPServer((args.host, args.port), DashboardHandler)
-    print(f"\n  🌌 Mnemos 记忆星系仪表盘已启动")
+    print("\n  🌌 Mnemos 记忆星系仪表盘已启动")
     print(f"  📡 http://localhost:{args.port}\n")
     try:
         server.serve_forever()
