@@ -11,7 +11,7 @@
 
 <p align="center">
   <b>世界第一的本地语义记忆系统</b><br>
-  <i>LongMemEval 97.4% — 零 LLM 调用，纯本地推理</i>
+  <i>LongMemEval 97.4% — 零 LLM 调用，纯本地推理 · 无限上下文 · 永久记忆</i>
 </p>
 
 <p align="center">
@@ -48,7 +48,7 @@
 
 | 系统 | 得分 | LLM 调用 | 本地运行 |
 |------|------|----------|---------|
-| **Mnemos (v7.14)** | **97.4%** | **零** | ✅ 全本地 |
+| **Mnemos (v7.17)** | **97.4%** | **零** | ✅ 全本地 |
 | [Anthropic S64+CV](https://github.com/zhzqy2021/LongMemEval) | 97.0% | S64 | ❌ |
 | Exabase | 96.4% | ~$0.98/run | ❌ |
 | OpenAI OMEGA | 95.4% | ~$2.31/run | ❌ |
@@ -75,6 +75,17 @@
 | **多模态记忆（Multimodal）** | 媒体附件存储与检索，按类型/摘要/嵌入搜索，自动摘要生成 |
 | **自修复记忆（Healer）** | 自动检测不一致性（重复/矛盾/时序异常），auto_heal 一键修复 |
 | **时间线回溯（TemporalGraph）** | 事件记录+回放+快照，分支合并检测，Graphviz 导出 |
+
+### 💬 会话持久化层（MiMo Code 融合）
+
+| 能力 | 说明 |
+|------|------|
+| **会话持久化** | sessions → messages → parts 三级结构，完整保存对话历史，支持回放和审计 |
+| **FTS5 对话搜索** | BM25 全文检索 + snippet 高亮，跨会话搜索对话内容，按 project/scope 过滤 |
+| **消息上下文窗口** | `around_message()` — 围绕任意消息获取前后 N 条上下文，精确定位对话片段 |
+| **实体-消息桥接** | 消息自动关联知识图谱实体，支持"谁说了什么"的溯源查询 |
+| **无限上下文（Auto-Condensation）** | 对话满 N 轮 → LLM 摘要 → 写入永久记忆。查询时：凝练摘要 + 最近 N 条原始消息 + FTS5 相关片段 = 无限上下文窗口 |
+| **分层注入（Stage）** | core 层（高置信度）+ context 层（中置信度）+ impression 层（原始事实），渐进式构建上下文 |
 
 ### 🧭 时序推理引擎（Chronos）
 
@@ -131,6 +142,12 @@
 - `decay` — 批量衰减管理
 - `neglected` — 遗忘预警
 - `touch` — 刷新记忆衰减
+- `append_message` — 追加对话消息（会话持久化）
+- `conversation_search` — FTS5 对话搜索
+- `around_message` — 消息上下文窗口
+- `link_message_entities` — 实体-消息关联
+- `auto_condense` — 自动凝练（无限上下文）
+- `get_full_context` — 获取分层上下文（凝练+最近+相关）
 
 ## 🏛️ Architecture
 
@@ -149,8 +166,8 @@
 │  │   Frequency → Weighted Merge → Fusion Ranking     │    │
 │  └────────────────┬─────────────────────────────────┘    │
 │  ┌────────────────┴─────────────────────────────────┐    │
-│  │   Chronos (时序引擎)    Mneme (画像引擎)          │    │
-│  │   Alchemist (凝练引擎)  Curator (去重策展)        │    │
+│  │   Chronos (时序)  Mneme (画像)  Alchemist (凝练)  │    │
+│  │   Curator (去重)  Condenser (无限上下文)           │    │
 │  └────────────────┬─────────────────────────────────┘    │
 ├───────────────────┴───────────────────────────────────┤
 │                    Storage                              │
@@ -162,6 +179,12 @@
 │  │  │ entries   │  │ fts5     │  │ (knowledge   │   │    │
 │  │  │           │  │          │  │  graph)      │   │    │
 │  │  └───────────┘  └──────────┘  └──────────────┘   │    │
+│  │                                                    │    │
+│  │  ┌───────────┐  ┌──────────┐  ┌──────────────┐   │    │
+│  │  │ sessions  │  │ messages │  │ condensations│   │    │
+│  │  │ (会话)    │  │ → parts  │  │ (凝练记录)   │   │    │
+│  │  │           │  │ (FTS5)   │  │              │   │    │
+│  │  └───────────┘  └──────────┘  └──────────────┘   │    │
 │  └──────────────────────────────────────────────────┘    │
 ├────────────────────────────────────────────────────────┤
 │                    Embedding                             │
@@ -170,6 +193,37 @@
 │  │   1024 维 / 自动降级到 n-gram hash               │    │
 │  └──────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────┘
+```
+
+### 无限上下文流程
+
+```
+对话进行中
+    │
+    ├──▶ 用户/Agent 消息 → append_message → sessions/messages/parts
+    │                                              │
+    │                        ┌─────────────────────┘
+    │                        ▼
+    │                  消息计数 ≥ N？
+    │                   是 │        否 │
+    │                    ▼            ▼
+    │          auto_condense()     继续累积
+    │          ┌──────────────┐
+    │          │ 取最旧 M 条   │
+    │          │ LLM 摘要     │
+    │          │ 写入 impression│
+    │          │ 记录 condensation│
+    │          └──────┬───────┘
+    │                 ▼
+    ▼           condensed_up_to 更新
+查询时 get_full_context()
+    │
+    ├──▶ condensations 摘要（凝练记忆）
+    ├──▶ 最近 N 条原始消息（精确上下文）
+    └──▶ FTS5 相关片段（跨会话回溯）
+         │
+         ▼
+    合并注入 → Agent 获得无限上下文
 ```
 
 ### 存储架构
@@ -191,6 +245,19 @@ memory_entries          memory_fts5              entity_edges
 │ state_key         │   │ decay_score      │    │ entity_b         │
 │ temporal_labels   │   │ last_decay_at    │    │ count            │
 └──────────────────┘   └──────────────────┘    └──────────────────┘
+
+sessions                messages → parts         condensations
+┌──────────────────┐   ┌──────────────────┐    ┌──────────────────┐
+│ id (PK)          │   │ id (PK)          │    │ id (PK)          │
+│ project_id       │──▶│ session_id (FK)  │◀───│ session_id (FK)  │
+│ agent_id         │   │ role             │    │ summary          │
+│ scope            │   │ agent_id         │    │ start_time       │
+│ time_started     │   │ time_created     │    │ end_time         │
+│ time_last_active │   │ ┌────────────┐   │    │ message_count    │
+│ message_count    │   │ │ parts      │   │    │ impression_id    │
+│ condensed_up_to  │   │ │ (FTS5索引) │   │    │ created_at       │
+└──────────────────┘   │ └────────────┘   │    └──────────────────┘
+                       └──────────────────┘
 ```
 
 ### 检索流程（共振）
@@ -346,6 +413,13 @@ SQLite 文件直接复制即可。Mnemos 兼容 SQLite 的标准备份工具。
 - [x] 多模态记忆（图片、音频摘要）
 - [x] 自修复记忆（不一致性检测）
 - [x] 时间线回溯（Temporal Graph）
+- [x] 会话持久化（sessions → messages → parts）
+- [x] FTS5 对话搜索（BM25 + snippet 高亮）
+- [x] 实体-消息桥接（知识图谱关联）
+- [x] 无限上下文（Auto-Condensation）
+- [x] 分层注入（core → context → impression）
+- [ ] 多模态扩展（图片、音频记忆）
+- [ ] 分布式同步（多设备记忆共享）
 
 ## 🧪 Development
 

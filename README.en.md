@@ -11,7 +11,7 @@
 
 <p align="center">
   <b>World's #1 Local Semantic Memory System</b><br>
-  <i>LongMemEval 97.4% — Zero LLM Calls, Pure Local Inference</i>
+  <i>LongMemEval 97.4% — Zero LLM Calls, Pure Local Inference · Infinite Context · Permanent Memory</i>
 </p>
 
 <p align="center">
@@ -48,7 +48,7 @@
 
 | System | Score | LLM Calls | Local |
 |--------|-------|-----------|-------|
-| **Mnemos (v7.14)** | **97.4%** | **Zero** | ✅ Fully local |
+| **Mnemos (v7.17)** | **97.4%** | **Zero** | ✅ Fully local |
 | [Anthropic S64+CV](https://github.com/zhzqy2021/LongMemEval) | 97.0% | S64 | ❌ |
 | Exabase | 96.4% | ~$0.98/run | ❌ |
 | OpenAI OMEGA | 95.4% | ~$2.31/run | ❌ |
@@ -75,6 +75,17 @@
 | **Multimodal Memory (Multimodal)** | Media attachment storage and retrieval. Search by type/summary/embedding. Automatic summary generation. |
 | **Self-Healing Memory (Healer)** | Automatic inconsistency detection (duplicates/conflicts/temporal anomalies), one-click auto_heal. |
 | **Timeline Rewind (TemporalGraph)** | Event logging + replay + snapshots, branch merge detection, Graphviz export. |
+
+### 💬 Session Persistence Layer (MiMo Code Fusion)
+
+| Capability | Description |
+|------------|-------------|
+| **Session Persistence** | sessions → messages → parts 3-level structure, complete conversation history with replay and audit |
+| **FTS5 Conversation Search** | BM25 full-text search + snippet highlighting, cross-session conversation search, project/scope filtering |
+| **Message Context Window** | `around_message()` — get N messages before/after any target message, pinpoint conversation segments |
+| **Entity-Message Bridging** | Messages auto-link to knowledge graph entities, supports "who said what" provenance queries |
+| **Infinite Context (Auto-Condensation)** | Conversation reaches N turns → LLM summary → write to permanent memory. Query: condensation summary + recent N raw messages + FTS5 related snippets = infinite context window |
+| **Layered Injection (Stage)** | core layer (high confidence) + context layer (medium confidence) + impression layer (raw facts), progressive context building |
 
 ### 🧭 Temporal Inference Engine (Chronos)
 
@@ -131,6 +142,12 @@ Standard [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server,
 - `decay` — batch decay management
 - `neglected` — neglect alerts
 - `touch` — refresh memory decay
+- `append_message` — append conversation message (session persistence)
+- `conversation_search` — FTS5 conversation search
+- `around_message` — message context window
+- `link_message_entities` — entity-message linking
+- `auto_condense` — auto condensation (infinite context)
+- `get_full_context` — get layered context (condensed + recent + related)
 
 ## 🏛️ Architecture
 
@@ -149,8 +166,8 @@ Standard [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server,
 │  │   Frequency → Weighted Merge → Fusion Ranking    │    │
 │  └────────────────┬─────────────────────────────────┘    │
 │  ┌────────────────┴─────────────────────────────────┐    │
-│  │   Chronos (Temporal Engine)    Mneme (Profile Engine)│
-│  │   Alchemist (Condensation Engine)  Curator (Deduplication Curation)│
+│  │   Chronos (Temporal)  Mneme (Profile)  Alchemist (Condense) │
+│  │   Curator (Dedup)     Condenser (Infinite Context)          │
 │  └────────────────┬─────────────────────────────────┘    │
 ├───────────────────┴───────────────────────────────────┤
 │                    Storage                              │
@@ -161,6 +178,12 @@ Standard [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server,
 │  │  │ memory_   │  │ memory_  │  │ entity_edges │   │    │
 │  │  │ entries   │  │ fts5     │  │ (knowledge   │   │    │
 │  │  │           │  │          │  │  graph)      │   │    │
+│  │  └───────────┘  └──────────┘  └──────────────┘   │    │
+│  │                                                    │    │
+│  │  ┌───────────┐  ┌──────────┐  ┌──────────────┐   │    │
+│  │  │ sessions  │  │ messages │  │ condensations│   │    │
+│  │  │ (convos)  │  │ → parts  │  │ (condensed)  │   │    │
+│  │  │           │  │ (FTS5)   │  │              │   │    │
 │  │  └───────────┘  └──────────┘  └──────────────┘   │    │
 │  └──────────────────────────────────────────────────┘    │
 ├────────────────────────────────────────────────────────┤
@@ -204,6 +227,37 @@ User Query
     ├──▶ Entity Association ───────┤──▶ Weighted Fusion ──▶ Deduplication ──▶ Ranking ──▶ Return Top-K
     ├──▶ Temporal Anchoring ───────┤
     └──▶ Frequency & Decay ─────┘
+```
+
+### Infinite Context Flow
+
+```
+Conversation Ongoing
+    │
+    ├──▶ User/Agent Message → append_message → sessions/messages/parts
+    │                                              │
+    │                        ┌─────────────────────┘
+    │                        ▼
+    │                  Message Count ≥ N?
+    │                   Yes │        No │
+    │                    ▼            ▼
+    │          auto_condense()     Keep Accumulating
+    │          ┌──────────────┐
+    │          │ Take oldest M│
+    │          │ LLM Summary  │
+    │          │ Write impression│
+    │          │ Record condensation│
+    │          └──────┬───────┘
+    │                 ▼
+    ▼           condensed_up_to Updated
+Query: get_full_context()
+    │
+    ├──▶ Condensations Summary (condensed memory)
+    ├──▶ Recent N Raw Messages (precise context)
+    └──▶ FTS5 Related Snippets (cross-session recall)
+         │
+         ▼
+    Merge Inject → Agent Gets Infinite Context
 ```
 
 ## 🚀 Quick Start
@@ -346,6 +400,11 @@ Simply copy the SQLite file. Mnemos is compatible with standard SQLite backup to
 - [x] Multimodal memory (images, audio summaries)
 - [x] Self-healing memory (inconsistency detection)
 - [x] Timeline rewind (Temporal Graph)
+- [x] Session persistence (sessions → messages → parts)
+- [x] FTS5 conversation search (BM25 + snippet highlighting)
+- [x] Entity-message bridging (knowledge graph linking)
+- [x] Infinite context (Auto-Condensation)
+- [x] Layered injection (core → context → impression)
 
 ## 🧪 Development
 
