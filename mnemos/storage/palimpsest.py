@@ -477,6 +477,27 @@ class PalimpsestStore:
             if "hits" not in cols:
                 self._conn.execute(f"ALTER TABLE {tbl} ADD COLUMN hits INTEGER NOT NULL DEFAULT 0")
 
+        # 兼容性迁移：sessions 表加 condensed_up_to 列 + condensations 表
+        session_cols = [
+            r[1] for r in self._conn.execute("PRAGMA table_info(sessions)").fetchall()
+        ]
+        if "condensed_up_to" not in session_cols:
+            self._conn.execute("ALTER TABLE sessions ADD COLUMN condensed_up_to TEXT")
+        self._conn.executescript("""
+            CREATE TABLE IF NOT EXISTS condensations (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                start_time TEXT NOT NULL,
+                end_time TEXT NOT NULL,
+                message_count INTEGER NOT NULL,
+                summary TEXT NOT NULL,
+                impression_id TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_cond_session ON condensations(session_id);
+        """)
+        self._conn.commit()
+
         return self._conn
 
     def close(self) -> None:
@@ -982,42 +1003,45 @@ class PalimpsestStore:
     # ── 自动凝练（无限上下文核心）──────────────────────────
 
     def get_uncompacted_messages(self, session_id: str, threshold: int = 20) -> list[dict]:
-        """获取未凝练的消息（超过 threshold 条的旧消息需要凝练）"""
-        # 获取上次凝练的截止时间
+        """获取未凝练的消息（超过 threshold 条的旧消息需要凝练）
+
+        返回需要凝练的最旧消息列表。用凝练记录中的 message_count 累计跳过，
+        避免时间戳精度问题。
+        """
         session = self.db.execute(
             "SELECT condensed_up_to FROM sessions WHERE id=?", (session_id,)
         ).fetchone()
         if not session:
             return []
-        condensed_up_to = session['condensed_up_to']
 
-        if condensed_up_to:
-            rows = self.db.execute(
-                """SELECT * FROM messages 
-                   WHERE session_id=? AND time_created <= ?
-                   ORDER BY time_created ASC""",
-                (session_id, condensed_up_to)
-            ).fetchall()
-        else:
-            # 从未凝练过，取全部消息
-            rows = self.db.execute(
-                "SELECT * FROM messages WHERE session_id=? ORDER BY time_created ASC",
-                (session_id,)
-            ).fetchall()
+        # 获取所有消息（按时间 ASC + ID ASC 保证稳定排序）
+        all_rows = self.db.execute(
+            """SELECT * FROM messages 
+               WHERE session_id=? ORDER BY time_created ASC, id ASC""",
+            (session_id,)
+        ).fetchall()
 
-        # 只有当总数 > threshold 时才需要凝练
-        total = self.db.execute(
-            "SELECT COUNT(*) as c FROM messages WHERE session_id=?", (session_id,)
-        ).fetchone()['c']
-
+        total = len(all_rows)
         if total <= threshold:
             return []
 
-        # 需要凝练的消息数 = 总数 - threshold（保留最近 threshold 条）
-        to_condense_count = total - threshold
-        # 取出要凝练的消息（最旧的）
+        # 计算已凝练的消息总数
+        condensed_count_row = self.db.execute(
+            "SELECT COALESCE(SUM(message_count), 0) as c FROM condensations WHERE session_id=?",
+            (session_id,)
+        ).fetchone()
+        condensed_count = condensed_count_row['c']
+
+        # 跳过已凝练的消息，取剩余的
+        unprocessed = all_rows[condensed_count:]
+
+        # 需要凝练的消息数 = 未处理总数 - threshold
+        to_condense_count = len(unprocessed) - threshold
+        if to_condense_count <= 0:
+            return []
+
         messages = []
-        for r in rows[:to_condense_count]:
+        for r in unprocessed[:to_condense_count]:
             msg = dict(r)
             parts = self.db.execute(
                 "SELECT * FROM parts WHERE message_id=?", (msg['id'],)
