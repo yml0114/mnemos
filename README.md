@@ -278,7 +278,7 @@ User Query
 ### 安装
 
 ```bash
-pip install mnemos
+pip install git+https://github.com/yml0114/mnemos.git
 ```
 
 ### 基本使用
@@ -303,7 +303,7 @@ for r in results:
 
 ```bash
 # 以 MCP 服务形式运行
-mnemos-mcp
+mnemos-server
 
 # 标准 I/O 传输，任何 MCP 客户端均可连接
 # Claude Desktop、Hermes Agent、Cursor 等直接接入
@@ -353,7 +353,7 @@ git clone https://github.com/zhzqy2021/LongMemEval
 cd LongMemEval
 
 # Mnemos 评测
-pip install mnemos
+pip install git+https://github.com/yml0114/mnemos.git
 python run.py --local longmemeval_s.json
 ```
 

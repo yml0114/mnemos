@@ -265,7 +265,7 @@ Query: get_full_context()
 ### Installation
 
 ```bash
-pip install mnemos
+pip install git+https://github.com/yml0114/mnemos.git
 ```
 
 ### Basic Usage
@@ -290,7 +290,7 @@ for r in results:
 
 ```bash
 # Run as MCP service
-mnemos-mcp
+mnemos-server
 
 # Standard I/O transport; any MCP client can connect
 # Claude Desktop, Hermes Agent, Cursor, etc.
@@ -340,7 +340,7 @@ git clone https://github.com/zhzqy2021/LongMemEval
 cd LongMemEval
 
 # Mnemos evaluation
-pip install mnemos
+pip install git+https://github.com/yml0114/mnemos.git
 python run.py --local longmemeval_s.json
 ```
 
