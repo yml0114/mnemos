@@ -1,3 +1,7 @@
+<div align="right">
+  🌐 <a href="README.en.md">English</a> | 中文
+</div>
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/yml0114/mnemos/main/assets/logo-dark.svg">
@@ -310,22 +314,22 @@ print(f"Accuracy: {correct}/{len(questions)} ({correct/len(questions)*100:.1f}%)
 
 ## ❓ FAQ
 
-**Q: Mnemos 需要 GPU 吗？**
+**Q: Mnemos 需要 GPU 吗？**  
 不需要。本地 ONNX 嵌入引擎在 CPU 上运行，内存占用 < 200MB。
 
-**Q: 数据存在哪里？**
+**Q: 数据存在哪里？**  
 全部本地 SQLite 文件。你指定路径，数据就在那里。不会发送到任何外部服务。
 
-**Q: 性能如何？**
+**Q: 性能如何？**  
 100 万条记忆下检索延迟 < 200ms（FTS5 + 预计算 embedding）。内存随数据量线性增长。
 
-**Q: 和 mem0 有什么区别？**
+**Q: 和 mem0 有什么区别？**  
 mem0 依赖有损向量量化，Mnemos 用 6 路信号共振 + 精确级联匹配器。在 LongMemEval 上 Mnemos 97.4% vs mem0 50.2%。
 
-**Q: 支持多少种 scope？**
+**Q: 支持多少种 scope？**  
 Universe → Tenant → Persona → Session 四级 scope 隔离，同一数据库可以服务多个 Agent / 多用户。
 
-**Q: 如何迁移数据？**
+**Q: 如何迁移数据？**  
 SQLite 文件直接复制即可。Mnemos 兼容 SQLite 的标准备份工具。
 
 ## 🗺️ Roadmap
