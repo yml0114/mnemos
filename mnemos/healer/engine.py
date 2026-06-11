@@ -687,7 +687,7 @@ class HealerEngine:
 
         rows = self._store.db.execute(
             f"SELECT * FROM inconsistency_log "
-            f"WHERE {where} ORDER BY created_at DESC LIMIT ?",
+            f"WHERE {where} ORDER BY detected_at DESC LIMIT ?",
             params + [limit],
         ).fetchall()
 

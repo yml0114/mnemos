@@ -279,12 +279,10 @@ CREATE TABLE IF NOT EXISTS inconsistency_log (
     issue_id    TEXT PRIMARY KEY,
     memory_id_a TEXT NOT NULL,
     memory_id_b TEXT,
-    issue_type  TEXT NOT NULL CHECK (issue_type IN (
-        'contradiction', 'duplication', 'outdated', 'orphan', 'conflict', 'schema_drift'
-    )),
-    severity    TEXT NOT NULL DEFAULT 'low' CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+    issue_type  TEXT NOT NULL,
+    severity    TEXT NOT NULL DEFAULT 'info',
     description TEXT NOT NULL DEFAULT '',
-    resolution  TEXT NOT NULL DEFAULT 'pending' CHECK (resolution IN ('pending', 'auto_fixed', 'superseded', 'dismissed')),
+    resolution  TEXT NOT NULL DEFAULT 'pending',
     resolved_at TEXT,
     detected_at TEXT NOT NULL,
     metadata    TEXT NOT NULL DEFAULT '{}'
